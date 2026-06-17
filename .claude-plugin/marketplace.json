@@ -1,0 +1,16 @@
+{
+  "name": "forest-skills",
+  "owner": {
+    "name": "Forest Protocol",
+    "url": "https://github.com/Forest-Protocol"
+  },
+  "plugins": [
+    {
+      "name": "forest",
+      "source": "./",
+      "description": "Forest Protocol skillsets — building games and apps on Forest (HTML Playkit and more).",
+      "category": "web3",
+      "tags": ["forest", "playkit", "html-sdk", "games"]
+    }
+  ]
+}
