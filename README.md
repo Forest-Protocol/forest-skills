@@ -1,5 +1,7 @@
 # forest-skills
 
+[![skills.sh](https://skills.sh/b/Forest-Protocol/forest-skills)](https://skills.sh/Forest-Protocol/forest-skills)
+
 The **`forest`** Claude Code plugin — Forest Protocol agent skillsets in the
 [Agent Skills](https://agentskills.io/specification) standard. Each skill lives under `skills/`
 with a `SKILL.md` entry point and is namespaced `forest:<skill>`.
@@ -27,10 +29,16 @@ always-current docs live at [docs.forest.inc](https://docs.forest.inc/developers
 
 ## Install
 
-Add as a Claude Code plugin from this repo:
+Any agent (Claude Code, Cursor, Codex, Copilot, Gemini, …) via the skills CLI:
+
+```bash
+npx skills add Forest-Protocol/forest-skills
+```
+
+Or as a Claude Code plugin marketplace:
 
 ```
-/plugin marketplace add <owner>/forest-skills
+/plugin marketplace add Forest-Protocol/forest-skills
 /plugin install forest@forest-skills
 ```
 
