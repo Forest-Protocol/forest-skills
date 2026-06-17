@@ -1,0 +1,10 @@
+{
+  "name": "forest",
+  "description": "Forest Protocol skillsets — building games and apps on Forest (HTML Playkit and more).",
+  "version": "0.1.0",
+  "author": {
+    "name": "Forest"
+  },
+  "homepage": "https://docs.forest.inc",
+  "keywords": ["forest", "playkit", "html-sdk", "web3", "games"]
+}
