@@ -49,6 +49,7 @@ signed requests.
 | On-chain token burns (in-game sinks) | `references/burns.md` |
 | One-use auth codes → backend settlement | `references/game-actions.md` |
 | Wallet events + verified-player handshake | `references/identity.md` |
+| Your own DB for stats / state / leaderboard | `references/persistent-data.md` |
 | RPC envelope + full method list | `references/rpc-reference.md` |
 | Error codes + security model | `references/errors-security.md` |
 
@@ -62,3 +63,4 @@ signed requests.
 - Settling credit or recording a burn from the iframe (server-only, needs the signing secret).
 - Hardcoding `projectId` instead of storing the one Forest provides.
 - Caching a swap-session id, or treating an approval hash as completion (it's progress).
+- Querying your own game database (stats/state) from the iframe — keys and queries are server-only (`references/persistent-data.md`).

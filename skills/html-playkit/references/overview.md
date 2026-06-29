@@ -61,6 +61,27 @@ Forest sends the connected wallet address to the iframe for **display only**. On
 - **Never use it for backend identity or accounting.**
 - When your backend needs to know which Forest player is in the session, run the [Player Identity](./identity.md) handshake instead.
 
+## Persistent game data
+
+Game Balance and Game Actions cover Forest's economic ledger — debits, credits, and settlement. They do **not** cover everything else your game needs to remember: match history, player stats, inventories, cosmetics, or a leaderboard. For that, you need your own live database.
+
+> **WARN: Keep it on your trusted backend, not in the iframe**
+
+Your HTML game already talks to a trusted backend to sign settlements (see [Game Actions](./game-actions.md)). That same backend should hold your database connection string. The iframe is untrusted — never put credentials or queries in it.
+
+A typical leaderboard flow:
+
+```txt
+HTML game
+  -> forest.game.action.authorize({ actionId, debitLimitAmount })
+  -> your backend validates the gameplay result
+  -> your backend signs and submits the settlement to Forest
+  -> your backend writes the result to your own database (score, playerId, timestamp)
+  -> HTML game reads the leaderboard from your backend's API
+```
+
+Key the data by the verified [Player Identity](./identity.md), never the display-only wallet address. See [Persistent Data](./persistent-data.md) for schema shape, where writes happen, and provider options.
+
 ## What you can use
 
 - [Swaps](./swaps.md) — Quote, buy, and sell Project Token through the connected wallet.
@@ -69,5 +90,6 @@ Forest sends the connected wallet address to the iframe for **display only**. On
 - [Burns](./burns.md) — Burn wallet-held Project Token on-chain for in-game sinks.
 - [Game Actions](./game-actions.md) — One-use authorizations for trusted backend settlement.
 - [Player Identity](./identity.md) — Wallet events and the verified-player handshake.
+- [Persistent Data](./persistent-data.md) — Your own database for stats, metrics, and game state.
 
 For the request/response envelope and the full method list, see the [RPC Reference](./rpc-reference.md).
