@@ -11,6 +11,9 @@ with a `SKILL.md` entry point and is namespaced `forest:<skill>`.
 - **`html-playkit`** (`/forest:html-playkit`) — building/debugging HTML games & apps embedded in
   a Forest token page: the iframe bridge, swaps, swap sessions, game balance, burns, game actions,
   identity.
+- **`portfolio`** (`/forest:portfolio`) — reading a user's positions, PnL, cost basis, and live
+  prices across Forest tokens via the REST API; rebalance/take-profit planning. Read-and-plan
+  only — no trade execution.
 
 More Forest skills (creator playbook, builder) drop in as sibling folders under `skills/`.
 
