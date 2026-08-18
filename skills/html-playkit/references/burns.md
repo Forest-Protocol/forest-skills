@@ -28,17 +28,18 @@ or purpose.
 Your backend defines the intent (`actionId`, `amount`, `burnAddress`, `reason`,
 `metadata`). The iframe calls
 [`forest.game.action.authorize`](./game-actions.md#forestgameactionauthorize)
-with that `actionId` and a base-unit debit limit — which is also the
+with that `actionId` and a display-amount debit limit — which is also the
 player-authorized **max burn amount**. Do **not** use `0`.
 
 ### Step 2
 ### Burn (client)
 
 ```js
-const { txHash, burnAddress } = await forest.game.burn({
+callForest("forest.game.burn", {
 	amount: "10", // display units
 	burnAddress, // optional; defaults to 0x…dead
 });
+// response arrives via the message listener: { txHash, burnAddress }
 ```
 
 Forest performs the on-chain transfer and returns `{ txHash, burnAddress }`
@@ -140,11 +141,11 @@ newest first); `forest.game.burns.summary` returns the player's totals grouped b
 `reason`. Both are player-scoped iframe reads (like `forest.game.balance`).
 
 ```js
-const { data, meta } = await callForest("forest.game.burns", { page: 1, perPage: 20 });
-// data[]: { id, amount, reason, metadata, txHash, burnAddress, createdAt }
+callForest("forest.game.burns", { page: 1, perPage: 20 });
+// response: { data, meta } — data[]: { id, amount, reason, metadata, txHash, burnAddress, createdAt }
 
-const summary = await callForest("forest.game.burns.summary");
-// { totalBurned, byReason: [{ reason, amount, count }] }
+callForest("forest.game.burns.summary");
+// response: { totalBurned, byReason: [{ reason, amount, count }] }
 ```
 
 `totalBurned` here is "verified burn/sink settlements" — not necessarily supply

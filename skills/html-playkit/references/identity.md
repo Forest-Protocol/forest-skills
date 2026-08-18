@@ -68,7 +68,7 @@ The iframe relays the opaque `code` to your backend. The code carries no identit
 ### Step 4
 ### Redeem the code (your backend)
 
-Your backend redeems the code against Forest with the HMAC-signed request, getting back `{ userId, walletAddress, nonce, issuedAt }`.
+Your backend redeems the code against Forest with the HMAC-signed request, getting back `{ userId, walletAddress, username, nonce, issuedAt }` — `username` is the display name at redeem time (or `null`); use it for display only and key accounting on `userId`.
 
 ### Step 5
 ### Assert the nonce matches

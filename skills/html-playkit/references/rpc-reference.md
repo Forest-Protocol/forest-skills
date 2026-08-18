@@ -100,6 +100,7 @@ Session `hash` responses additionally carry one of these `*_submitted` stages so
 | `forest.game.transactions`     | no                 | List the current player's Game Balance / Vault activity (deposits, claims, funding).                            |
 | `forest.game.action.authorize` | no                 | Authorize one trusted-backend-settled game action.                                                              |
 | `forest.identity.code`         | no                 | Issue a single-use code to resolve verified identity.                                                           |
+| `forest.runtime.invoke`        | no                 | Invoke a declared backend capability on the Forest-hosted runtime (capability-gated projects only).             |
 
 ## REST endpoints
 
