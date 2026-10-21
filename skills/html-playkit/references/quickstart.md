@@ -1,8 +1,52 @@
 # Quickstart
 
-This gets a Forest HTML template talking to the parent page: request the wallet, handle Forest's messages, and fire your first quote. For the concepts behind it, see the [Overview](./overview.md).
+For a new game, use **New game** in Forest Harness. Its starter includes the frontend SDK and hosted backend setup. You can ask your assistant to make the following changes.
 
-## Add the bridge
+## Read Game Balance from a hosted backend
+
+The backend uses Forest's verified player automatically:
+
+```ts title="backend/index.ts"
+import type { BackendContext } from "@forest/runtime";
+
+export const runtime = "forest/2";
+export const methods = Object.freeze(
+	Object.assign(Object.create(null), {
+		async balance(ctx: BackendContext) {
+			return ctx.forest.game.getBalance();
+		},
+	})
+);
+```
+
+Call that method from the frontend:
+
+```ts title="frontend/index.ts"
+import { forest } from "@forest/runtime";
+
+const output = document.createElement("p");
+document.body.append(output);
+output.textContent = "Sign in to see your game balance.";
+
+try {
+	const result = await forest.backend.call<{ balance: string }>("balance", {});
+	output.textContent = `Game balance: ${result.balance}`;
+} catch (error) {
+	output.textContent = error instanceof Error ? error.message : "Could not read your balance.";
+}
+```
+
+The SDK waits for sign-in when needed. Dismissing sign-in rejects the call with `SIGN_IN_REQUIRED`; do not retry automatically.
+
+Ask your assistant to prepare the game and start **Preview**. With **Test wallet** enabled, economic calls return simulated results. **Get ready to launch** runs the game checks; **Launch on forest.inc** opens the website for the wallet steps.
+
+Next, add [persistent data](./hosted-backend.md) or a [game action](./game-actions.md). The hosted backend needs no signing secret or identity-code handshake.
+
+## Legacy HTML uploads
+
+The rest of this page is for an HTML file uploaded through the website. It uses the existing message bridge and `callForest` helper. Harness-built games should use `@forest/runtime`, which also handles their session and message nonce.
+
+### Add the bridge
 
 Drop this into your HTML app. It sends RPC requests with `callForest(...)` and routes Forest's messages back to your code.
 
@@ -86,11 +130,11 @@ window.parent.postMessage({ type: "FOREST_REQUEST_WALLET" }, "*");
 ```
 
 > **INFO: The wallet address is display-only**
-
-`FOREST_WALLET_CONNECTED` carries a `walletAddress` for display only. Never send it to your
-backend as player identity — use the [Player Identity](./identity.md) flow
-instead. Error responses (`status: "error"`) carry an `error.code`; see the [error
-reference](./errors-security.md#wallet-and-rpc-errors) for the codes.
+>
+> `FOREST_WALLET_CONNECTED` carries a `walletAddress` for display only. Never send it to your
+> backend as player identity — use the [Player Identity](./identity.md)
+> flow instead. Error responses (`status: "error"`) carry an `error.code`; see the [error
+> reference](./errors-security.md#wallet-and-rpc-errors) for the codes.
 
 ## Project context
 
@@ -107,41 +151,37 @@ On load, Forest sends the current project context to your iframe:
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `projectId` | string | yes | Active project id. Your trusted backend uses it in Forest API paths such as /campaigns/{projectId}/html/settlements. |
+| `projectId` | string | yes | Active project id. Your trusted backend uses it in Forest API paths such as /playables/{projectId}/html/settlements. |
 | `gameEntity` | string | yes | Entity type for this project. 'html' for HTML templates. |
 | `autoSwapsEnabled` | boolean | yes | Whether the project owner enabled user-approved auto-swap sessions for this HTML project. |
 
 > **INFO: Store projectId, never hardcode it**
-
-`projectId` is **not** a secret, but do not hardcode it. The same HTML file can be uploaded to
-different projects, and Forest provides the active id at runtime — store the id Forest sends.
+>
+> `projectId` is **not** a secret, but do not hardcode it. The same HTML file can be uploaded to
+> different projects, and Forest provides the active id at runtime — store the id Forest sends.
 
 > **INFO: Gate session UI on autoSwapsEnabled**
-
-`autoSwapsEnabled` tells the iframe whether the owner enabled user-approved auto-swap sessions.
-If it is `false`, do not render session controls.
+>
+> `autoSwapsEnabled` tells the iframe whether the owner enabled user-approved auto-swap sessions.
+> If it is `false`, do not render session controls.
 
 ## The core loop
 
 Most templates follow the same swap loop. Game, session, burn, and identity flows layer on top — each is documented on its own page.
 
-### Step 1
-### Request wallet state on load
+### Step 1: Request wallet state on load
 
 Send `FOREST_REQUEST_WALLET` and store the incoming `FOREST_PROJECT_CONTEXT`.
 
-### Step 2
-### Quote when the wallet connects
+### Step 2: Quote when the wallet connects
 
 Call `forest.swap.quote` once the wallet connects, and re-quote whenever amount, direction, or slippage changes.
 
-### Step 3
-### Submit on confirm
+### Step 3: Submit on confirm
 
 Call `forest.swap.buy` or `forest.swap.sell` when the user confirms.
 
-### Step 4
-### Refresh after a swap
+### Step 4: Refresh after a swap
 
 On `success`, request another quote so wallet balances update:
 

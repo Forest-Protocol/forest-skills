@@ -2,6 +2,8 @@
 
 Swaps run through the connected wallet. Quote is a read; buy and sell open the wallet. Amounts are display decimal strings — see [Amounts](./overview.md#amounts-display-vs-base-units). For user-approved auto-swaps, see [Swap Sessions](./swap-sessions.md).
 
+For Harness games, import `{ forest }` from `@forest/runtime` and await the calls below. Legacy HTML uploads pass the same params to `callForest("forest.swap.quote", params)` and the other named methods.
+
 ## Swap Methods
 
 ### `forest.swap.quote`
@@ -9,7 +11,7 @@ Swaps run through the connected wallet. Quote is a read; buy and sell open the w
 Gets a read-only quote and snapshot. This does not open the wallet or submit a transaction.
 
 ```js
-callForest("forest.swap.quote", {
+await forest.swap.quote({
 	amount: "0.05",
 	direction: "buy",
 	slippage: 0.5,
@@ -21,13 +23,42 @@ callForest("forest.swap.quote", {
 | `amount` | string (display decimal) | yes | Positive display decimal string. |
 | `direction` | "buy" \| "sell" | yes | Swap direction. |
 | `slippage` | number (percent) | no | Percent slippage. Forest uses its default when omitted. |
+| `currency` | "FOREST" | no | Returns an executable swap session quote instead of the wallet quote. `amount` must then be an exact decimal string. |
+
+### Session quotes
+
+Pass `currency: "FOREST"` to price a [swap session](./swap-sessions.md) trade. Forest reads the market at one block and does not change the swap widget.
+
+```js
+const { sessionQuote, snapshot } = await forest.swap.quote({
+	amount: "1",
+	direction: "buy",
+	currency: "FOREST",
+	slippage: 1,
+});
+```
+
+For a buy, `amount` is the most FOREST to spend, including slippage. For a sell, `amount` is the exact Project Token amount to sell. Its decimals cannot exceed the pay token's decimals. BNB amounts are not supported.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `projectAmount` | string (base-unit integer) | yes | Pass as `projectAmount`. Exact output for buys; exact input for sells. |
+| `forestAmountLimit` | string (base-unit integer) | yes | Pass as `forestAmountLimit`. Maximum FOREST spent for buys; minimum FOREST received for sells. |
+| `forestAmount` | string (base-unit integer) | yes | Expected FOREST spent or received, including fees. |
+| `expiresAt` | number (Unix seconds) | yes | Quote expiry, 90 seconds after the quoted block. Pass as `deadline`. |
+| `direction` | "buy" \| "sell" | yes | Direction the quote was computed for. |
+| `chainId, blockNumber, quotedAt` | number, string, number | yes | Chain, block, and block timestamp the quote was read at. |
+| `forestToken, projectToken` | string (address) | yes | Token addresses the quote applies to. |
+| `forestDecimals, projectDecimals` | number | yes | Token decimals for converting the base-unit amounts. |
+
+`snapshot` carries the same amounts as display strings for UI. Send `sessionQuote` to your backend, which passes its amounts and `expiresAt` to `executeSwapSession`. Fetch a new quote after `expiresAt`.
 
 ### `forest.swap.buy`
 
 Submits a buy transaction through the connected wallet. `amount` is the amount of the pay token to spend.
 
 ```js
-callForest("forest.swap.buy", {
+await forest.swap.buy({
 	amount: "0.05",
 	slippage: 0.5,
 });
@@ -43,7 +74,7 @@ callForest("forest.swap.buy", {
 Submits a sell transaction through the connected wallet. `amount` is the amount of the launched token to sell.
 
 ```js
-callForest("forest.swap.sell", {
+await forest.swap.sell({
 	amount: "100",
 	slippage: 0.5,
 });
@@ -56,7 +87,7 @@ callForest("forest.swap.sell", {
 
 ## Snapshot Reference
 
-Quote and swap responses can include `result.snapshot`. Store the latest snapshot and render your UI from it. The base snapshot always includes direction, slippage, pay token, and receive token. Quote and route fields are present only after Forest has enough data for them.
+The SDK's returned object can include `snapshot`; legacy message responses expose it as `result.snapshot`. Store the latest snapshot and render your UI from it. The base snapshot always includes direction, slippage, pay token, and receive token. Quote and route fields are present only after Forest has enough data for them.
 
 ```js
 {

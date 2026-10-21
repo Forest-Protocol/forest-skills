@@ -1,10 +1,32 @@
 # RPC Reference
 
-This is the reference home for the HTML SDK transport: the request and response envelopes, the `result.stage` progress values, the full list of exposed RPC methods, and the signed REST endpoints your backend calls. Topic-specific request and response shapes live on each topic page.
+## Harness frontend SDK
+
+Import `{ forest }` from `@forest/runtime`. It sends the messages, validates the parent and nonce, waits for a session, and resolves each call with its final result.
+
+| SDK method                                                     | Use                                             |
+| -------------------------------------------------------------- | ----------------------------------------------- |
+| `forest.backend.call(method, input)`                           | Call your hosted backend.                       |
+| `forest.wallet.onChange(callback)` / `forest.wallet.request()` | Observe display wallet state or ask to connect. |
+| `forest.game.balance()` / `.transactions(query)`               | Read the player's balance and activity.         |
+| `forest.game.deposit({ amount })` / `.withdraw({ amount })`    | Wallet-approved deposits and withdrawals.       |
+| `forest.game.action.authorize({ actionId, debitLimitAmount })` | Authorize one game action.                      |
+| `forest.game.burn({ amount, burnAddress? })` / `.burns(query)` | Burn wallet tokens or read recorded burns.      |
+| `forest.swap.quote(params)` / `.buy(params)` / `.sell(params)` | Quote or submit a wallet trade.                 |
+| `forest.swap.session.create(params)` / `.current()`            | Enable or read an approved swap session.        |
+| `forest.swap.session.get(sessionId)` / `.revoke(sessionId)`    | Read or revoke a particular session.            |
+
+Game amounts and session budgets in frontend requests use display strings. Backend economic inputs use base units; see [amounts](./overview.md#amounts-display-vs-base-units).
+
+Use `ctx.forest.game.getBurnSummary()` for a burn summary in a hosted backend. Legacy identity-code and `forest.runtime.invoke` RPCs are not exposed by the Harness SDK; use `ctx.player` and `forest.backend.call` instead.
+
+## Legacy HTML transport
+
+The remaining reference describes the legacy HTML SDK transport: the request and response envelopes, the `result.stage` progress values, the full list of exposed RPC methods, and the signed REST endpoints your backend calls. Topic-specific request and response shapes live on each topic page.
 
 ## RPC Request Format
 
-All Forest RPC calls use this request envelope:
+Legacy HTML RPC calls use this request envelope. Harness games use the SDK above, which adds the required session nonce:
 
 ```js
 {
@@ -47,10 +69,10 @@ Forest replies with:
 | `error`   | The request failed. Read `error.code` and `error.message`.                 |
 
 > **INFO: Error codes are documented centrally**
-
-On an `error` status, read `error.code` and `error.message`. Every code, what causes it, and how
-to recover is listed in the [Errors and Security](./errors-security.md)
-reference.
+>
+> On an `error` status, read `error.code` and `error.message`. Every code, what causes it, and how
+> to recover is listed in the [Errors and
+> Security](./errors-security.md) reference.
 
 ### Progress stages
 
@@ -84,7 +106,7 @@ Session `hash` responses additionally carry one of these `*_submitted` stages so
 
 | Method                         | Wallet transaction | Purpose                                                                                                         |
 | ------------------------------ | ------------------ | --------------------------------------------------------------------------------------------------------------- |
-| `forest.swap.quote`            | no                 | Read a swap quote and token-page snapshot.                                                                      |
+| `forest.swap.quote`            | no                 | Read a swap quote and token-page snapshot, or an executable session quote with `currency: "FOREST"`.            |
 | `forest.swap.buy`              | yes                | Buy Project Token through the connected wallet.                                                                 |
 | `forest.swap.sell`             | yes                | Sell Project Token through the connected wallet.                                                                |
 | `forest.swap.session.create`   | yes                | Ask the user to enable an auto-swap session.                                                                    |
@@ -104,10 +126,10 @@ Session `hash` responses additionally carry one of these `*_submitted` stages so
 
 ## REST endpoints
 
-Signed/relayed endpoints under `/campaigns/{projectId}/html`. Full request and response detail lives on each topic page.
+External backends for legacy HTML use these signed endpoints. Harness backends use `ctx.forest` instead. Signed/relayed endpoints under `/playables/{projectId}/html`. Full request and response detail lives on each topic page.
 
-| Method | Path                                    | Caller               | Documented in                                                                           |
-| ------ | --------------------------------------- | -------------------- | --------------------------------------------------------------------------------------- |
+| Method | Path                                    | Caller               | Documented in                                                                                 |
+| ------ | --------------------------------------- | -------------------- | --------------------------------------------------------------------------------------------- |
 | POST   | `/action-authorizations`                | iframe (session)     | [Game Actions](./game-actions.md#forestgameactionauthorize)        |
 | POST   | `/settlements`                          | backend (HMAC `v1=`) | [Game Actions](./game-actions.md#trusted-settlement)               |
 | POST   | `/burns`                                | backend (HMAC `v1=`) | [Burns](./burns.md)                                                |

@@ -1,17 +1,19 @@
 # Game Actions
 
-Game Actions are walletless in-game actions. A player first creates a short-lived Action Authorization, then your trusted backend validates the gameplay and submits the settlement to Forest. This is the credit-producing path — only your server holds the Settlement Signing Secret.
+Game Actions are walletless in-game actions. A player first creates a short-lived Action Authorization, then your trusted backend validates the gameplay and submits the settlement to Forest. Harness-built games use `ctx.forest.settleAction` in their hosted backend. Legacy HTML uploads use an external backend with a Settlement Signing Secret.
 
-Forest web uses the player's active Forest session behind the iframe boundary to authorize player-scoped game requests. Your iframe does not receive auth tokens directly; use the RPC methods below. Authorization amounts are display strings, settlement amounts are base units — see [Amounts](./overview.md#amounts-display-vs-base-units).
+Forest web uses the player's active Forest session behind the iframe boundary to authorize player-scoped game requests. Use the frontend SDK for authorization; it handles the Forest session for you. Authorization amounts are display strings, settlement amounts are base units — see [Amounts](./overview.md#amounts-display-vs-base-units).
 
 ### `forest.game.action.authorize`
 
 Creates a one-use Action Authorization for a developer-provided `actionId`.
 
 ```js
+import { forest } from "@forest/runtime";
+
 const actionId = crypto.randomUUID();
 
-callForest("forest.game.action.authorize", {
+await forest.game.action.authorize({
 	actionId,
 	debitLimitAmount: "1",
 });
@@ -33,7 +35,7 @@ Successful responses return:
 }
 ```
 
-Send the same `actionId`, `projectId`, and the player's gameplay input to your backend. Do not ask the browser to choose the final payout.
+Send the same `actionId` and the player's gameplay input to your hosted backend with `forest.backend.call`. Legacy HTML uploads use `callForest("forest.game.action.authorize", params)` and their own backend endpoint. Do not ask the browser to choose the final payout.
 
 Create the Action Authorization close to the actual game action. It is short-lived, and Forest returns `expiresAt` so your UI can reject stale attempts before calling your backend.
 
@@ -41,19 +43,54 @@ Create the Action Authorization close to the actual game action. It is short-liv
 
 Forest handles settlement accounting and security checks. Your trusted backend handles game outcome validation.
 
-```txt
-HTML game
-  -> forest.game.action.authorize({ actionId, debitLimitAmount })
-  -> your backend validates gameplay and computes debit/credit
-  -> your backend signs the settlement
-  -> Forest API records confirmed ledger entries
-  -> HTML game calls forest.game.balance
+### Hosted backend
+
+This small example always charges one token and returns half a token. The backend fixes both amounts; the caller only supplies the action ID.
+
+```ts title="backend/index.ts"
+import type { BackendContext } from "@forest/runtime";
+
+export const runtime = "forest/2";
+export const methods = Object.freeze(
+	Object.assign(Object.create(null), {
+		async play(ctx: BackendContext) {
+			const input = ctx.input;
+			if (
+				!input ||
+				typeof input !== "object" ||
+				!("actionId" in input) ||
+				typeof input.actionId !== "string"
+			) {
+				throw new Error("An action ID is required.");
+			}
+			return ctx.forest.settleAction({
+				actionId: input.actionId,
+				debitAmount: "1000000000000000000",
+				creditAmount: "500000000000000000",
+			});
+		},
+	})
+);
 ```
+
+After the frontend authorization above succeeds:
+
+```js
+const result = await forest.backend.call("play", { actionId });
+const balance = await forest.game.balance();
+```
+
+The player needs one token in Game Balance, and the game needs enough vault capacity for the credit. The settlement result contains display strings such as `debitAmount: "1.0"` and `creditAmount: "0.5"`.
+
+Forest supplies authentication and the timestamp. Keep each action ID and its confirmed outcome in your game data. If the result is uncertain, stop automatic retries: a later backend invocation receives a new timestamp, so calling it again is not a byte-identical settlement replay.
+
+### External backend for legacy HTML
+
+The remaining signing instructions apply to legacy HTML uploads whose backend runs outside Forest. That backend validates the game outcome and signs its settlement request.
 
 ### Settlement Signing Secret
 
-### Step 1
-### Obtain it once
+### Step 1: Obtain it once
 
 Forest creates the first Settlement Signing Secret when an HTML project launch
 completes and shows it **once** on the congratulations screen. Copy the backend
@@ -65,31 +102,31 @@ FOREST_API_BASE_URL=__FOREST_API_BASE_URL__
 SETTLEMENT_SECRET=fsc_live_...
 ```
 
-### Step 2
-### Read its status later
+### Step 2: Read its status later
 
 After that, the project editor shows only secret status metadata: active state,
 prefix, last 4 characters, and creation time. It cannot reveal the existing
 plaintext secret again.
 
-### Step 3
-### Create or rotate
+### Step 3: Create or rotate
 
 Use **Create Secret** when no active secret exists. Use **Rotate Secret** to
 replace the active secret. Rotation invalidates the previous backend secret and
 returns the new plaintext value once.
 
 > **INFO: The secret is server-only**
-
-Never put the Settlement Signing Secret in uploaded HTML, frontend JavaScript, app-template
-code, or any browser-accessible environment variable. Forest stores settlement secrets encrypted
-at rest and uses the active project secret only to verify settlement HMAC signatures — a
-database row holds encrypted secret material plus display metadata, not the plaintext value.
+>
+> Never put the Settlement Signing Secret in uploaded HTML, frontend JavaScript, app-template
+> code, or any browser-accessible environment variable. Forest stores settlement secrets encrypted
+> at rest and uses the active project secret only to verify settlement HMAC signatures — a
+> database row holds encrypted secret material plus display metadata, not the plaintext value.
 
 ### Settlement request
 
+`POST /playables/{projectId}/html/settlements`
+
 ```http
-POST /campaigns/{projectId}/html/settlements
+POST /playables/{projectId}/html/settlements
 Content-Type: application/json
 X-Forest-Settlement-Signature: v1=<hex-hmac>
 ```
@@ -130,7 +167,7 @@ const signature = crypto
 	.update(body)
 	.digest("hex");
 
-await fetch(`${FOREST_API}/campaigns/${projectId}/html/settlements`, {
+await fetch(`${FOREST_API}/playables/${projectId}/html/settlements`, {
 	method: "POST",
 	headers: {
 		"Content-Type": "application/json",
@@ -155,17 +192,16 @@ Successful settlement responses return:
 Settlement responses return display decimal amounts. Settlement requests use base-unit integer strings because they are signed server-to-server API bodies.
 
 > **INFO: Retrying a settlement**
-
-If a settlement request times out or the response is lost, retry by sending the **same**
-`actionId`, JSON body, and signature again. Do **not** create a new timestamp or change
-settlement amounts for the same `actionId`.
+>
+> If a settlement request times out or the response is lost, retry by sending the **same**
+> `actionId`, JSON body, and signature again. Do **not** create a new timestamp or change
+> settlement amounts for the same `actionId`.
 
 Settlement failures use the shared [settlement error taxonomy](./errors-security.md#settlement-errors) (signature, authorization, timestamp, amount, and reuse errors).
 
 > **WARN: Only a trusted server can settle credit**
-
-Browser-only games cannot safely submit credit-producing settlements. The browser can request
-Action Authorizations, but only a trusted server can hold the Settlement Signing Secret and
-choose final debit/credit amounts.
+>
+> Keep final debit and credit decisions in the backend. A Harness game uses its hosted backend; an
+> external backend for legacy HTML keeps its Settlement Signing Secret server-side.
 
 If your HTML game calls your trusted backend directly from the browser, normal browser origin rules still apply. No CORS setup is needed when the game and backend share the same origin. If they are on different origins, your backend must allow the game document's origin. Forest's iframe proxy relays SDK messages; it does not proxy arbitrary `fetch` calls to your backend.

@@ -1,5 +1,9 @@
 # Persistent Data
 
+> **INFO: Legacy HTML only**
+>
+> Harness games use `ctx.db` on the hosted backend instead; see [Hosted Backend](./hosted-backend.md).
+
 Game Balance and Game Actions cover Forest's economic ledger — debits, credits, and settlement. Beyond that, most games need somewhere to keep score: match history, player stats, inventories, cosmetics, a leaderboard. For that you stand up your own live database, on the trusted backend — never in the iframe.
 
 Three kinds of data:

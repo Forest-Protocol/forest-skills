@@ -1,6 +1,27 @@
 # Player Identity
 
-## Project and Wallet Messages
+## Harness games
+
+The hosted backend receives `{ id, walletAddress }` in `ctx.player`. Forest verifies the player before invoking the method; `walletAddress` may be `null`. Key private game data and accounting on `ctx.player.id`.
+
+Use the frontend wallet address only for display:
+
+```js
+import { forest } from "@forest/runtime";
+
+const unsubscribe = forest.wallet.onChange((walletAddress) => {
+	// Update your wallet label; this is not backend identity.
+});
+// Call unsubscribe() when this UI is removed.
+```
+
+The hosted backend has no identity-redeem helper and needs no identity-code handshake. A player ID supplied in `ctx.input` is untrusted.
+
+## Legacy HTML wallet messages
+
+The rest of this page documents HTML uploads with an external backend.
+
+### Project and Wallet Messages
 
 Forest sends project and wallet messages to your iframe. Your app can also request the latest wallet state.
 
@@ -38,11 +59,11 @@ window.addEventListener("message", (event) => {
 Only the project id and public wallet address are exposed. Forest does not send auth tokens, private keys, cookies, or session data to the iframe.
 
 > **WARN: FOREST_WALLET_CONNECTED is display-only**
-
-The address is fine for rendering (greetings, avatars), but it is **not** an authenticated
-credential. Once it reaches your uploaded HTML it is a plain string the player can rewrite in
-their own browser and report to your backend. **Never use this address for backend identity or
-accounting.** To learn the verified player identity, use the Player Identity flow below.
+>
+> The address is fine for rendering (greetings, avatars), but it is **not** an authenticated
+> credential. Once it reaches your uploaded HTML it is a plain string the player can rewrite in
+> their own browser and report to your backend. **Never use this address for backend identity or
+> accounting.** To learn the verified player identity, use the Player Identity flow below.
 
 ## Player Identity
 
@@ -50,33 +71,27 @@ When your trusted backend needs to know _which_ Forest player is in the session 
 
 ### The identity handshake
 
-### Step 1
-### Mint a single-use nonce (your backend)
+### Step 1: Mint a single-use nonce (your backend)
 
 Your backend mints a single-use nonce for this login attempt and stores it. The nonce binds the identity to one login transaction and is verified on redeem.
 
-### Step 2
-### Request a code from the iframe
+### Step 2: Request a code from the iframe
 
 The iframe calls `forest.identity.code({ nonce })` with that nonce. Forest returns `{ code, expiresAt }`.
 
-### Step 3
-### Relay the code to your backend
+### Step 3: Relay the code to your backend
 
 The iframe relays the opaque `code` to your backend. The code carries no identity data — do not log it or put it in URLs.
 
-### Step 4
-### Redeem the code (your backend)
+### Step 4: Redeem the code (your backend)
 
 Your backend redeems the code against Forest with the HMAC-signed request, getting back `{ userId, walletAddress, username, nonce, issuedAt }` — `username` is the display name at redeem time (or `null`); use it for display only and key accounting on `userId`.
 
-### Step 5
-### Assert the nonce matches
+### Step 5: Assert the nonce matches
 
 Your backend asserts the returned `nonce` equals the unconsumed nonce you minted for this login, then burns it.
 
-### Step 6
-### Mint your session
+### Step 6: Mint your session
 
 Only after the nonce check passes does your backend mint its own session, keyed on the verified `userId`.
 
@@ -97,8 +112,10 @@ The code is opaque and contains no identity data. Relay it to your backend; do n
 
 ### Redeem (trusted backend only)
 
+`POST /playables/{projectId}/html/identity/redeem`
+
 ```http
-POST /campaigns/{projectId}/html/identity/redeem
+POST /playables/{projectId}/html/identity/redeem
 X-Forest-Settlement-Signature: v1=<hmac-sha256 of the raw body>
 ```
 
@@ -115,7 +132,7 @@ Sign and send exactly like a settlement (reuse your settlement signing helper):
 const body = JSON.stringify({ code, timestamp: Math.floor(Date.now() / 1000) });
 const signature = `v1=${createHmac("sha256", SETTLEMENT_SIGNING_SECRET).update(body).digest("hex")}`;
 
-const res = await fetch(`${FOREST_API}/campaigns/${projectId}/html/identity/redeem`, {
+const res = await fetch(`${FOREST_API}/playables/${projectId}/html/identity/redeem`, {
 	method: "POST",
 	headers: { "Content-Type": "application/json", "X-Forest-Settlement-Signature": signature },
 	body,

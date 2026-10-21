@@ -1,95 +1,77 @@
 # Overview
 
-Forest Playkit is your toolkit for building HTML games and apps that live natively inside Forest Protocol.
+Forest Playkit connects your game to Forest's wallet, trading, and game economy.
 
-Your app runs inside an iframe on the token page and communicates with Forest through browser `postMessage` calls. With Playkit you can read the connected wallet, request swap quotes, submit swaps through the user's wallet, and tap into player-scoped game APIs. No package to install. No build step required.
+For games made in **Forest Harness**, Forest hosts the frontend, backend, and database. Import `forest` from `@forest/runtime` in the frontend. Put trusted game rules in the hosted backend, using `ctx.forest` for economic operations and `ctx.db` for persistent game data.
 
-New here? Start with the [Quickstart](./quickstart.md) — you'll have a working bridge and your first call running in minutes. This page covers the mental model behind it.
+Start with the [Quickstart](./quickstart.md), then read [Hosted Backend](./hosted-backend.md) for the backend and database contract. Harness includes the authoring instructions for its AI assistant.
 
-> **INFO: Code examples**
+## Frontend and backend
 
-Throughout these docs:
+| Where code runs | What it does                                                                                                              |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Game frontend   | Draws the game, calls `forest.backend.call`, and asks Forest to handle wallet actions through the SDK.                    |
+| Hosted backend  | Validates gameplay, identifies the player through `ctx.player`, stores data with `ctx.db`, and settles with `ctx.forest`. |
+| Forest website  | Handles sign-in, wallet prompts, token launch, and transaction confirmation.                                              |
 
-- **Client snippets are JavaScript** and are valid TypeScript as-is.
-- **Backend snippets are Node.js.**
-- **HTTP endpoints** are shown as a raw request, plus a cURL example where useful.
-- **Amounts** in client (iframe) calls are display decimals; signed backend bodies use base-unit integer strings.
+The browser is untrusted. Decide outcomes and rewards in the backend. Never accept a player ID, score, or payout from the browser without validation.
 
-> **INFO: The two surfaces**
-
-Every integration is split across two trust boundaries. Keep them straight and the rest of the SDK follows.
-
-- **The iframe (client).** Your uploaded HTML. It calls Forest RPC methods to read state and to ask Forest to open the user's wallet. It is untrusted — anything it reports can be forged by the player in their own browser.
-- **Your trusted backend (server).** Holds the **Settlement Signing Secret** and is the only place allowed to produce credit (settlements), execute swap sessions, redeem identity, and record burns. The browser can _request_ these, but only your server can _authorize_ them.
-
-Forest sits between the two: it mediates wallet actions for the iframe and verifies your backend's signed requests.
+Hosted backends do not need a Settlement Signing Secret. Forest authenticates each invocation and supplies its verified player. Database and platform credentials stay outside your game code.
 
 ## Core balances
 
-Three different pools of value — do not conflate them:
+| Concept           | What it means                                                               |
+| ----------------- | --------------------------------------------------------------------------- |
+| Wallet-held token | Tokens in the player's wallet. Buying tokens increases this balance.        |
+| Game Balance      | The player's deposited balance, which game actions can debit or credit.     |
+| Game Vault        | The game's capacity to pay rewards, funded separately from player deposits. |
 
-| Concept                   | What it is                                                                                    |
-| ------------------------- | --------------------------------------------------------------------------------------------- |
-| Wallet-held Project Token | Tokens in the player's own wallet. Buying gives them these; it does **not** add Game Balance. |
-| Game Balance              | A per-player internal ledger Forest debits/credits through walletless Game Actions.           |
-| Game Vault                | The project's payout capacity. Separate from any player; funds winnings. Creator-funded.      |
-
-How value moves between them:
-
-- A player deposit moves wallet tokens into their Game Balance.
-- Funding the Game Vault does **not** credit any player.
-- A player deposit does **not** add payout capacity.
+A deposit moves wallet tokens into Game Balance. Funding the Game Vault does not credit a player, and a player deposit does not add payout capacity. A burn spends wallet holdings and leaves Game Balance unchanged.
 
 ## Amounts: display vs base units
 
-This trips people up, so it is the single rule to remember:
+Use strings for exact token amounts:
 
-- **You send display amounts.** In HTML SDK params, use normal token display strings like `"1"`, `"0.25"`, or `"1000.5"`. No wei/base-unit values, commas, token symbols, or unit suffixes.
-- **Signed backend bodies and session/settlement responses use base units.** Forest converts display request amounts to base-unit integer strings inside the Forest-owned web bridge before it calls the API or opens the wallet. Auto-swap session response budgets and trusted backend settlement/execution/burn amount fields are base-unit integer strings.
+| Operation                                                                      | Units                                                                              |
+| ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| Frontend game amounts, action debit limits, and swap-session budgets           | Display strings, such as `"1"` or `"0.25"`.                                        |
+| Backend settlement, burn, and swap-execution inputs                            | Base-unit integer strings. With 18 decimals, one token is `"1000000000000000000"`. |
+| Game Balance, settlement and burn results, transaction amounts, vault capacity | Display strings. A result may use `"1.0"` for one token.                           |
+| Swap-session response budgets and backend swap-execution amounts               | Base-unit integer strings.                                                         |
+| Swap quote snapshots                                                           | Display numbers for presentation.                                                  |
+| `sessionQuote` amounts from `currency: "FOREST"` quotes                        | Base-unit integer strings.                                                         |
 
-> **WARN: Both sides must be the same economic value**
+Do base-unit arithmetic with `bigint`, then serialize the result to a string. Do not pass base units through `Number` or `parseFloat`.
 
-When a backend signs an amount that the iframe also passed, the two must represent the **same
-economic value**: display units in the SDK call, base-unit integer in the signed body.
+## Sign-in and player identity
 
-## Identity is not the wallet address
+Anonymous visitors can see the game immediately. A protected SDK call waits for sign-in. If the visitor dismisses sign-in, the call rejects with `SIGN_IN_REQUIRED`; handle that as a user choice.
 
-> **WARN: Never use the iframe wallet address for identity**
-
-Forest sends the connected wallet address to the iframe for **display only**. Once it reaches your HTML it is a plain string the player can rewrite, so:
-
-- **Never use it for backend identity or accounting.**
-- When your backend needs to know which Forest player is in the session, run the [Player Identity](./identity.md) handshake instead.
+`forest.wallet.onChange` supplies an address for display. The hosted backend gets the verified player through `ctx.player.id`; use that ID to scope private data. It does not need the legacy identity-code handshake.
 
 ## Persistent game data
 
-Game Balance and Game Actions cover Forest's economic ledger — debits, credits, and settlement. They do **not** cover everything else your game needs to remember: match history, player stats, inventories, cosmetics, or a leaderboard. For that, you need your own live database.
+Use `ctx.db` for inventory, progress, match history, and shared rankings. Filter private rows by `ctx.player.id`. Public rankings should return only the fields you intend to share. Each backend invocation starts with fresh globals, so durable data belongs in the database.
 
-> **WARN: Keep it on your trusted backend, not in the iframe**
+Game data and Forest's economic accounting are separate. A database write does not credit Game Balance, and a settlement does not save your application's progress automatically.
 
-Your HTML game already talks to a trusted backend to sign settlements (see [Game Actions](./game-actions.md)). That same backend should hold your database connection string. The iframe is untrusted — never put credentials or queries in it.
+## Preview and launch
 
-A typical leaderboard flow:
+Harness Preview runs the backend with local persistent game data. The **Test wallet** and economic operations are simulated, with results marked `simulated: true`. Simulated balances reset when Preview restarts; local game data remains.
 
-```txt
-HTML game
-  -> forest.game.action.authorize({ actionId, debitLimitAmount })
-  -> your backend validates the gameplay result
-  -> your backend signs and submits the settlement to Forest
-  -> your backend writes the result to your own database (score, playerId, timestamp)
-  -> HTML game reads the leaderboard from your backend's API
-```
+Use **Get ready to launch** in Harness, review the findings, then **Launch on forest.inc** to continue with your wallet. A published game is immutable, with one playable per token.
 
-Key the data by the verified [Player Identity](./identity.md), never the display-only wallet address. See [Persistent Data](./persistent-data.md) for schema shape, where writes happen, and provider options.
+## Legacy HTML uploads with an external backend
 
-## What you can use
+Legacy HTML uploads continue to use the browser message bridge and an external backend. That backend holds the Settlement Signing Secret, verifies player identity, stores game data in its own database, and submits HMAC-signed requests to Forest.
 
-- [Swaps](./swaps.md) — Quote, buy, and sell Project Token through the connected wallet.
-- [Swap Sessions](./swap-sessions.md) — User-approved auto-swap sessions and trusted execution.
-- [Game Balance](./game-balance.md) — Read, deposit to, and withdraw the player
-- [Burns](./burns.md) — Burn wallet-held Project Token on-chain for in-game sinks.
-- [Game Actions](./game-actions.md) — One-use authorizations for trusted backend settlement.
-- [Player Identity](./identity.md) — Wallet events and the verified-player handshake.
-- [Persistent Data](./persistent-data.md) — Your own database for stats, metrics, and game state.
+The [legacy HTML quickstart](./quickstart.md#legacy-html-uploads), [identity handshake](./identity.md#player-identity), and signed sections of the economic guides remain available for these integrations.
 
-For the request/response envelope and the full method list, see the [RPC Reference](./rpc-reference.md).
+## Guides
+
+- [Hosted Backend](./hosted-backend.md) — Backend methods, verified players, and persistent SQL data.
+- [Game Actions](./game-actions.md) — Player authorization and backend settlement.
+- [Game Balance](./game-balance.md) — Balances, deposits, withdrawals, and vault funding.
+- [Burns](./burns.md) — Wallet token sinks and verified burn records.
+- [Swaps](./swaps.md) — Quotes and wallet-approved trading.
+- [Swap Sessions](./swap-sessions.md) — User-approved automatic trading.

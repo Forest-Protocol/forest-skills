@@ -2,7 +2,23 @@
 
 ## Error Handling
 
-Handle `error` responses as first-class UI states. The user may reject a wallet request, the quote may fail, or the token may not support swaps.
+The Harness SDK returns promises. Catch rejected calls and show a useful message:
+
+```js
+try {
+	const balance = await forest.game.balance();
+} catch (error) {
+	if (error.code === "SIGN_IN_REQUIRED") {
+		// Leave the game visible; let the visitor choose when to sign in.
+	} else {
+		showError(error.message);
+	}
+}
+```
+
+A hosted backend failure can surface as `RUNTIME_FAILED` without exposing its internal details. Use Harness Preview diagnostics to investigate. An uncertain economic result is not permission to charge again: retain action IDs and confirmed outcomes, and stop automatic retries.
+
+For legacy HTML, handle `error` message responses as first-class UI states. The user may reject a wallet request, the quote may fail, or the token may not support swaps.
 
 ```js
 if (data.status === "error") {
@@ -10,7 +26,7 @@ if (data.status === "error") {
 }
 ```
 
-This page is the reference for Forest HTML SDK error codes. Domain pages link here instead of repeating codes inline.
+The tables below include shared wallet/game codes and the legacy HTML callback codes. Domain pages link here instead of repeating codes inline.
 
 REST endpoints can also return normal HTTP validation errors without an app-specific `code` field, for example when a project or session is not found, auto-swaps are disabled, a route `sessionId` does not match the signed body, or a transaction fails chain validation. Treat those as terminal request failures and read the returned `message`.
 
@@ -34,19 +50,21 @@ Returned to the iframe over the RPC interface.
 
 ## Swap and session errors
 
-| Code                    | Cause                                                                | Resolution                                                      |
-| ----------------------- | -------------------------------------------------------------------- | --------------------------------------------------------------- |
-| `INVALID_AMOUNT`        | The swap amount is missing, zero, negative, or not a finite decimal. | Ask the user for a positive display amount.                     |
-| `QUOTE_FAILED`          | Forest could not quote the requested amount.                         | Retry, or adjust the amount.                                    |
-| `SWAP_UNAVAILABLE`      | This token cannot be swapped through the current route.              | Disable swap UI for this token.                                 |
-| `SWAP_IN_PROGRESS`      | A swap or session wallet flow is already in progress.                | Wait for the in-flight flow to finish before starting another.  |
-| `CONFIG_TIMEOUT`        | Direction or slippage did not apply in time.                         | Re-apply the config and retry.                                  |
-| `SWAP_SESSION_DISABLED` | Auto-swaps are disabled for this project.                            | Do not render session controls — `autoSwapsEnabled` is `false`. |
-| `SWAP_SESSION_FAILED`   | Forest could not create or load the swap session.                    | Retry, or have the user recreate the session.                   |
+| Code                             | Cause                                                                     | Resolution                                                      |
+| -------------------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| `INVALID_AMOUNT`                 | The swap amount is missing, zero, negative, or not a finite decimal.      | Ask the user for a positive display amount.                     |
+| `QUOTE_FAILED`                   | Forest could not quote the requested amount.                              | Retry, or adjust the amount.                                    |
+| `SWAP_UNAVAILABLE`               | This token cannot be swapped through the current route.                   | Disable swap UI for this token.                                 |
+| `SWAP_IN_PROGRESS`               | A swap or session wallet flow is already in progress.                     | Wait for the in-flight flow to finish before starting another.  |
+| `CONFIG_TIMEOUT`                 | Direction or slippage did not apply in time.                              | Re-apply the config and retry.                                  |
+| `SWAP_SESSION_DISABLED`          | Auto-swaps are disabled for this project.                                 | Do not render session controls — `autoSwapsEnabled` is `false`. |
+| `SWAP_SESSION_FAILED`            | Forest could not create or load the swap session.                         | Retry, or have the user recreate the session.                   |
+| `SWAP_SESSION_EXECUTOR_UNFUNDED` | The session executor wallet has no gas. The request never ran.            | Fund the wallet, then retry with a new `requestId`.             |
+| `SWAP_SESSION_EXECUTION_EXPIRED` | A finalized block passed the request's `deadline`. The request never ran. | Quote again and retry with a new `requestId`.                   |
 
 ## Settlement errors
 
-Returned by the signed backend APIs for settlement and burns, and by the shared HMAC/timestamp checks used by identity redeem and swap-session execution. Swap-session execution can also return uncoded HTTP errors for session state or route validation.
+These are the underlying settlement and burn codes. Signature and HMAC errors apply to external backends for legacy HTML; hosted backends use Forest-provided authentication, and the frontend may see a general runtime failure instead. Swap-session execution can also return uncoded HTTP errors for session state or route validation.
 
 | Code                                       | Cause                                                                                            | Resolution                                                                                    |
 | ------------------------------------------ | ------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
@@ -66,13 +84,13 @@ Returned by the signed backend APIs for settlement and burns, and by the shared 
 | `BURN_TX_HASH_REUSED`                      | The `txHash` is already recorded under a different `actionId`, or already recorded as a deposit. | Do not replay an old burn — each `txHash` backs exactly one burn.                             |
 
 > **INFO: Two authorization codes, not one**
+>
+> `GAME_ACTION_AUTHORIZATION_FAILED` (RPC) means the *authorize* step could not create an
+> authorization. `ACTION_AUTHORIZATION_UNAVAILABLE` (settlement) means the authorization was
+> missing, already used, or expired at *settle* time. They are distinct stages — do not treat them
+> as the same error.
 
-`GAME_ACTION_AUTHORIZATION_FAILED` (RPC) means the *authorize* step could not create an
-authorization. `ACTION_AUTHORIZATION_UNAVAILABLE` (settlement) means the authorization was
-missing, already used, or expired at *settle* time. They are distinct stages — do not treat them
-as the same error.
-
-## Identity errors
+## Identity errors for legacy HTML
 
 | Code                     | Cause                                                               | Resolution                                                                |
 | ------------------------ | ------------------------------------------------------------------- | ------------------------------------------------------------------------- |
@@ -85,10 +103,10 @@ as the same error.
 ## Security Notes
 
 > **WARN: Treat the iframe boundary as untrusted**
+>
+> - Verify the `type` and shape of every incoming message before acting on it.
+> - Keep request ids unique.
+> - Do not assume your iframe can access parent-page storage, wallet providers, cookies, or settlement secrets.
+> - Forest-owned browser actions go through this message interface; credit-producing settlement must go through a trusted backend.
 
-- Verify the `type` and shape of every incoming message before acting on it.
-- Keep request ids unique.
-- Do not assume your iframe can access parent-page storage, wallet providers, cookies, or settlement secrets.
-- Forest-owned browser actions go through this message interface; credit-producing settlement must go through a trusted backend.
-
-The `FOREST_WALLET_CONNECTED` address is display-only and forgeable by the player. Never use it for backend identity, anti-abuse, or accounting — resolve the player through the [Player Identity](./identity.md) flow instead. Credit always lands on the Forest player who authorized the action; your backend cannot redirect it to an arbitrary recipient.
+The `FOREST_WALLET_CONNECTED` address is display-only and forgeable by the player. Never use it for backend identity, anti-abuse, or accounting — use `ctx.player.id` in a hosted backend, or the [Player Identity](./identity.md#player-identity) handshake in an external backend for legacy HTML. Credit always lands on the Forest player who authorized the action; your backend cannot redirect it to an arbitrary recipient.

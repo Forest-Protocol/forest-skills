@@ -3,16 +3,31 @@
 Buying Project Token gives the player wallet-held tokens. It does not increase Game Balance. Game Balance is the deposited amount that can be debited or credited by walletless [Game Actions](./game-actions.md). For the relationship between wallet, Game Balance, and Game Vault, see [Core balances](./overview.md#core-balances). Amounts are display decimal strings.
 
 > **INFO: Burns are wallet-side, not Game Balance**
+>
+> Burns are wallet-side on-chain transfers and never appear in Game Balance — they live on the
+> [Burns](./burns.md) page.
 
-Burns are wallet-side on-chain transfers and never appear in Game Balance — they live on the
-[Burns](./burns.md) page.
+## Harness frontend and hosted backend
+
+Import `{ forest }` from `@forest/runtime` for the frontend calls below. Legacy HTML uploads use the same method names through the [callForest bridge](./quickstart.md#legacy-html-uploads).
+
+The hosted backend can read the verified player's balance and history directly:
+
+```js
+const balance = await ctx.forest.game.getBalance();
+const history = await ctx.forest.game.getTransactions({ page: 1, perPage: 20 });
+const vault = await ctx.forest.game.getVaultCapacity();
+// balance.balance and vault.capacity are display strings.
+```
+
+Deposits and withdrawals remain frontend wallet actions.
 
 ### `forest.game.balance`
 
-Reads the current player's Game Balance for this HTML project.
+Reads the current player's Game Balance for this game.
 
 ```js
-callForest("forest.game.balance");
+await forest.game.balance();
 ```
 
 Successful responses return:
@@ -27,14 +42,14 @@ Successful responses return:
 }
 ```
 
-`forest.game.balance` is the player's **Game Balance** (internal ledger) state only. Burns do **not** appear here — read them from `forest.game.burns` / `forest.game.burns.summary`.
+`forest.game.balance` is the player's **Game Balance** (internal ledger) state only. Burns do **not** appear here — read them with `forest.game.burns()` or the hosted backend's `ctx.forest.game.getBurnSummary()`. Legacy HTML also has a `forest.game.burns.summary` RPC.
 
 ### `forest.game.deposit`
 
 Asks Forest to deposit wallet-held Project Token into the player's Game Balance. Forest opens the connected wallet, submits the on-chain deposit transaction, verifies the transaction through the API, then returns the updated Game Balance.
 
 ```js
-callForest("forest.game.deposit", {
+await forest.game.deposit({
 	amount: "5",
 });
 ```
@@ -63,7 +78,7 @@ Successful responses return:
 Asks Forest to withdraw player Game Balance back to the connected wallet. Forest requests the withdrawal signature from the API, opens the connected wallet, submits the on-chain withdrawal, confirms it through the API, then returns the updated Game Balance.
 
 ```js
-callForest("forest.game.withdraw", {
+await forest.game.withdraw({
 	amount: "2.5",
 });
 ```
@@ -75,9 +90,9 @@ callForest("forest.game.withdraw", {
 Successful responses return the same shape as `forest.game.deposit`.
 
 > **WARN: Deposits and withdrawals are Forest-owned wallet flows**
-
-Do **not** self-credit deposits or sign withdrawals from your game server. After either call
-succeeds, render `result.balance` or request `forest.game.balance` again.
+>
+> Do **not** self-credit deposits or sign withdrawals from your game server. After either call
+> succeeds, render `result.balance` or request `forest.game.balance` again.
 
 #### Claim lifecycle
 
@@ -87,17 +102,17 @@ A withdrawal is a **claim** that is meant to reach `completed`. Each claim is `p
 - **Retry** by calling `forest.game.withdraw` again with the same amount — Forest reuses the existing pending claim and re-prompts the wallet.
 
 > **WARN: No cancel — claims are finalize-only**
-
-If a player abandons a pending claim, Forest releases the reservation automatically once it is
-confirmed unspent on-chain, so the player's balance returns with no client action. Do **not**
-build a "cancel claim" control.
+>
+> If a player abandons a pending claim, Forest releases the reservation automatically once it is
+> confirmed unspent on-chain, so the player's balance returns with no client action. Do **not**
+> build a "cancel claim" control.
 
 ### `forest.game.transactions`
 
-Reads the current player's paginated **Game Balance / Vault activity** for this HTML project — deposits, funding, and withdrawal claims (each `claim` row is a withdrawal request).
+Reads the current player's paginated **Game Balance / Vault activity** for this game — deposits, funding, and withdrawal claims (each `claim` row is a withdrawal request).
 
 ```js
-callForest("forest.game.transactions", {
+await forest.game.transactions({
 	page: 1,
 	perPage: 20,
 });
@@ -145,20 +160,19 @@ Each `data` entry has the following shape:
 
 The `meta` object carries `total`, `perPage`, `currentPage`, and `lastPage`.
 
-> **WARN: Player-scoped read — do not proxy through your backend**
-
-This is a Forest-authenticated, player-scoped read through the iframe proxy: it returns only the
-signed-in player's rows, never all users' withdrawal requests. It is **not** a creator/admin
-listing API. Do **not** proxy it through your game backend.
+> **WARN: Player-scoped history**
+>
+> Both the frontend SDK and `ctx.forest.game.getTransactions` return the verified player's
+> history. They are not a creator/admin listing of every player's withdrawal requests.
 
 > **INFO: Burns are a separate domain**
-
-Burns are **not** in this feed — use `forest.game.burns` for the player's recorded burns. See
-[Burns](./burns.md).
+>
+> Burns are **not** in this feed — use `forest.game.burns` for the player's recorded burns. See
+> [Burns](./burns.md).
 
 ## Game Vault Funding
 
-HTML projects use a Game Vault.
+A Harness game with a positive reward-pool allocation gets a Game Vault during launch. Legacy HTML games can also use a vault.
 
 The Game Vault is the project's payout capacity. It is separate from a player's Game Balance:
 
@@ -170,31 +184,30 @@ The Game Vault is the project's payout capacity. It is separate from a player's 
 If the Game Vault runs out, credit-producing settlements can fail even when the player's action was authorized. The creator must top up the Game Vault with Project Tokens, then Forest must record that funding transaction.
 
 > **WARN: Funding is not an iframe RPC method**
-
-Do **not** ask uploaded HTML to transfer funds or record vault funding. Uploaded HTML cannot
-read or fund Game Vault capacity through iframe RPC. Keep creator funding controls in Forest
-project tools or another trusted creator/admin surface. Call `forest.game.balance` only when you
-need the current player's playable balance.
+>
+> Do **not** ask uploaded HTML to transfer funds or record vault funding. The frontend has no
+> vault-funding RPC. A hosted backend can read capacity with `ctx.forest.game.getVaultCapacity()`.
+> Keep creator funding controls in Forest project tools or another trusted creator/admin surface.
+> Call `forest.game.balance` only when you need the current player's playable balance.
 
 A creator-side flow should:
 
-### Step 1
-### Transfer Project Tokens
+### Step 1: Transfer Project Tokens
 
 Transfer Project Tokens to the project's Game Vault address.
 
-### Step 2
-### Wait for the transaction hash
+### Step 2: Wait for the transaction hash
 
 Wait for the on-chain transfer to be mined and capture its transaction hash.
 
-### Step 3
-### Record the funding transaction
+### Step 3: Record the funding transaction
 
 Record the funding transaction through the authenticated Forest API:
 
+`POST /playables/{projectId}/{gameEntity}/fund`
+
 ```http
-POST /campaigns/{projectId}/html/fund
+POST /playables/{projectId}/html/fund
 Content-Type: application/json
 ```
 

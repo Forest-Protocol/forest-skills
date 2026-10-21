@@ -1,66 +1,71 @@
 ---
 name: html-playkit
-description: Use when building or debugging an HTML game or app embedded in a Forest token page — the iframe postMessage bridge, swaps, swap sessions, game balance, burns, game actions (settlement), or verified player identity. Covers display-vs-base-unit amounts, the trusted-backend boundary, and the Forest RPC method envelope.
+description: Use when building or debugging a Forest game or app — a Forest Harness game (`@forest/runtime` frontend, hosted backend with `ctx.player`, `ctx.db`, `ctx.forest`) or a legacy HTML upload on the iframe postMessage bridge. Covers swaps, FOREST session quotes, swap sessions and their failure codes, game balance, burns, game actions (settlement), player identity, display-vs-base-unit amounts, and the trusted-backend boundary.
 ---
 
-# Forest Playkit (HTML SDK)
+# Forest Playkit
 
-Toolkit for HTML games/apps that run **inside an iframe on a Forest token page** and talk to
-Forest over browser `postMessage`. No package install, no build step. The iframe reads wallet
-state and asks Forest to open the user's wallet; a trusted backend authorizes anything that
-moves value.
+Connects a game to Forest's wallet, trading, and game economy. Two shapes:
+
+- **Forest Harness game (current).** Forest hosts the frontend, backend, and database. The
+  frontend imports `forest` from `@forest/runtime`; trusted rules live in the hosted backend,
+  which gets the verified player as `ctx.player`, stores data with `ctx.db`, and moves value
+  with `ctx.forest`. No signing secret.
+- **Legacy HTML upload.** Uploaded HTML in an iframe calls `callForest(method, params)` over
+  `postMessage`; your own backend holds the Settlement Signing Secret and signs REST calls.
 
 ## Core mental model (read before coding)
 
-**Two trust surfaces — keep them straight and the rest follows:**
+**The browser is untrusted; the backend decides.** The frontend draws the game and asks Forest
+to open the wallet. Anything it reports — scores, player IDs, payouts — can be forged. Only the
+backend settles credit, executes swap sessions, and records burns.
 
-- **The iframe (client, untrusted).** Your uploaded HTML. Calls Forest RPC methods to read state
-  and to ask Forest to open the user's wallet. Anything it reports can be forged by the player.
-- **Your backend (trusted).** Holds the **Settlement Signing Secret**. The only place allowed to
-  produce credit (settlements), execute swap sessions, redeem identity, and record burns. The
-  browser can *request* these; only your server can *authorize* them.
+## Rules that cause most bugs
 
-Forest sits between the two: mediates wallet actions for the iframe, verifies the backend's
-signed requests.
-
-## Three rules that cause most bugs
-
-1. **Amounts: display vs base units.** SDK (iframe) calls take **display** strings (`"1"`,
-   `"0.25"`) — no wei, commas, symbols, or suffixes. **Signed backend bodies and
-   session/settlement responses use base-unit integer strings.** When the backend signs an amount
-   the iframe also passed, both must be the *same economic value* in their respective units.
-2. **Identity is not the wallet address.** Forest sends the connected address to the iframe for
-   **display only** — a player-rewritable string. Never use it for backend identity or
-   accounting. Run the Player Identity handshake (`references/identity.md`).
-3. **Three separate pools of value — never conflate.** Wallet-held Project Token (in the player's
-   wallet) ≠ Game Balance (per-player internal ledger Forest debits/credits) ≠ Game Vault
-   (project payout capacity, creator-funded). A deposit moves wallet→game balance; funding the
-   vault credits no player.
+1. **Amounts: display vs base units.** Frontend SDK calls take **display** strings (`"1"`,
+   `"0.25"`). Backend settlement, burn, and swap-execution inputs, session budgets, and
+   `sessionQuote` amounts are **base-unit integer strings**. Do the math with `bigint`; never
+   pass base units through `Number`.
+2. **Identity is not the wallet address.** The address the frontend sees is for display only.
+   Hosted backends use `ctx.player.id`; legacy backends run the identity handshake.
+3. **Three separate pools of value.** Wallet-held Project Token ≠ Game Balance (per-player
+   ledger) ≠ Game Vault (creator-funded payout capacity). Funding the vault credits no player.
+4. **Swap-session amounts come from a session quote.** Call `forest.swap.quote` with
+   `currency: "FOREST"` and pass its `sessionQuote` `projectAmount`, `forestAmountLimit`, and
+   `expiresAt` (as `deadline`) to `executeSwapSession`. The plain quote is display-only.
+5. **Keep `requestId` stable until the outcome is final.** A `409` or any uncoded failure means
+   retry the same `requestId` and body. Only `SWAP_SESSION_EXECUTOR_UNFUNDED` and
+   `SWAP_SESSION_EXECUTION_EXPIRED` prove the request never ran; only then use a new ID.
 
 ## Which reference to load
 
 | Task | File |
 | --- | --- |
-| First bridge + first call | `references/quickstart.md` |
-| Mental model / balances | `references/overview.md` |
-| Quote / buy / sell through wallet | `references/swaps.md` |
-| User-approved auto-swaps, trusted execution | `references/swap-sessions.md` |
-| Read / deposit / withdraw playable balance | `references/game-balance.md` |
-| On-chain token burns (in-game sinks) | `references/burns.md` |
-| One-use auth codes → backend settlement | `references/game-actions.md` |
-| Wallet events + verified-player handshake | `references/identity.md` |
-| Your own DB for stats / state / leaderboard | `references/persistent-data.md` |
-| RPC envelope + full method list | `references/rpc-reference.md` |
-| Error codes + security model | `references/errors-security.md` |
+| Model, balances, amounts, Preview | `references/overview.md` |
+| First game: frontend + hosted backend | `references/quickstart.md` |
+| Backend methods, `ctx.player`, `ctx.db`, `ctx.forest` | `references/hosted-backend.md` |
+| Quote / buy / sell, FOREST session quotes | `references/swaps.md` |
+| User-approved auto-swaps and execution outcomes | `references/swap-sessions.md` |
+| Read / deposit / withdraw Game Balance | `references/game-balance.md` |
+| Token burns (in-game sinks) | `references/burns.md` |
+| Game action authorization → settlement | `references/game-actions.md` |
+| Wallet events and player identity | `references/identity.md` |
+| Own database for a legacy HTML backend | `references/persistent-data.md` |
+| RPC envelope and full method list | `references/rpc-reference.md` |
+| Error codes and security model | `references/errors-security.md` |
 
-`references/*.md` is generated from the canonical fumadocs docs — treat as the detailed spec.
+`references/*.md` mirror the canonical docs at
+[docs.forest.inc](https://docs.forest.inc/developers/forest-playkit); the docs win if they differ.
 
 ## Common mistakes
 
-- Sending wei/base units in an iframe SDK call (use display strings).
-- Trusting the iframe-reported wallet address for accounting.
-- Crediting a player by funding the Game Vault (it funds payouts, not players).
-- Settling credit or recording a burn from the iframe (server-only, needs the signing secret).
-- Hardcoding `projectId` instead of storing the one Forest provides.
-- Caching a swap-session id, or treating an approval hash as completion (it's progress).
-- Querying your own game database (stats/state) from the iframe — keys and queries are server-only (`references/persistent-data.md`).
+- Sending base units in a frontend SDK call (use display strings).
+- Trusting a browser-supplied player ID, address, score, or payout.
+- Crediting a player by funding the Game Vault.
+- Settling credit or recording a burn from the frontend.
+- Deriving swap-session limits from the display quote or a fixed price instead of a
+  `currency: "FOREST"` session quote.
+- Minting a new `requestId` after a timeout or `409` (double-trade risk).
+- Caching a swap-session id, or treating an approval hash as completion.
+- Treating Preview results marked `simulated: true` as live market data.
+- Querying the database from the frontend; use backend methods.

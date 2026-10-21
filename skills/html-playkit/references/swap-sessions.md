@@ -1,16 +1,15 @@
 # Swap Sessions
 
-Swap sessions are user-approved auto-swap permissions. The iframe asks the user to enable a session; your trusted backend executes against it. They are available only when the project owner has enabled auto-swaps for the HTML project (`autoSwapsEnabled` in [project context](./quickstart.md#project-context)).
+Swap sessions are user-approved auto-swap permissions. The iframe asks the user to enable a session; your trusted backend executes against it. For Harness games, enable `autoSwaps: true` in `forest.json` and declare `usesSwaps: true` in `forest.economy.json`. Legacy HTML uses `autoSwapsEnabled` in [project context](./quickstart.md#project-context).
 
 > **WARN: Gate session UI on availability**
-
-If `autoSwapsEnabled` is `false`, do **not** render session controls — execution will be
-rejected with `SWAP_SESSION_DISABLED`.
+>
+> If automatic swaps are disabled, do **not** render session controls — execution will be rejected
+> with `SWAP_SESSION_DISABLED`.
 
 ## How sessions work
 
-### Step 1
-### Enable (create)
+### Step 1: Enable (create)
 
 The iframe requests a session with display-decimal budgets. Forest converts them
 into contract base units, prepares the required token approvals for the session
@@ -18,42 +17,42 @@ executor contract, and prepares the session transaction. The user confirms the
 wallet prompts; Forest then confirms the `createSession` transaction and stores
 the active session.
 
-### Step 2
-### Execute (backend)
+### Step 2: Execute (backend)
 
 Session execution is a backend-to-Forest API flow. Forest uses the user's managed
 executor wallet to send the on-chain execution transaction. HTML templates do not
 configure executor wallet addresses — Forest owns the executor-wallet setup and
 confirmation flow.
 
-### Step 3
-### Revoke
+### Step 3: Revoke
 
 Users can revoke active sessions from the Forest UI or via
 `forest.swap.session.revoke`.
 
 > **WARN: Never cache the session id**
-
-Before **every** backend execution, request `forest.swap.session.current` and use that returned
-`session.id`. Do **not** execute against a session id restored from `localStorage` or another
-stale client cache.
+>
+> Before **every** backend execution, request `forest.swap.session.current` and use that returned
+> `session.id`. Do **not** execute against a session id restored from `localStorage` or another
+> stale client cache.
 
 > **INFO: Approval hashes are progress, not completion**
-
-The create flow may emit `hash` responses with `stage: "approval_submitted"` before the final
-`stage: "create_submitted"` hash. Treat approval hashes as progress updates; the session is
-active only after the final `success` response.
+>
+> The create flow may emit `hash` responses with `stage: "approval_submitted"` before the final
+> `stage: "create_submitted"` hash. Treat approval hashes as progress updates; the session is
+> active only after the final `success` response.
 
 > **INFO: Executor wallet needs gas**
-
-The managed executor wallet must hold native gas on the configured chain for executions to land.
+>
+> The managed executor wallet must hold native gas on the configured chain for executions to land.
 
 ## Session Methods
+
+Harness frontends import `{ forest }` from `@forest/runtime`. These promises resolve with the final result after confirmation. Legacy HTML uses the same named RPCs through `callForest` and receives the progress messages described above.
 
 ### `forest.swap.session.create`
 
 ```js
-callForest("forest.swap.session.create", {
+await forest.swap.session.create({
 	forestBudget: "50",
 	projectBudget: "1000.5",
 	expiresAt: Math.floor(Date.now() / 1000) + 86400,
@@ -63,7 +62,7 @@ callForest("forest.swap.session.create", {
 Unlimited budget:
 
 ```js
-callForest("forest.swap.session.create", {
+await forest.swap.session.create({
 	forestBudget: null,
 	projectBudget: null,
 	expiresAt: Math.floor(Date.now() / 1000) + 86400,
@@ -108,7 +107,7 @@ Budgets are display decimal strings. Use `null` for a side that should be unlimi
 ### `forest.swap.session.current`
 
 ```js
-callForest("forest.swap.session.current");
+await forest.swap.session.current();
 ```
 
 Returns the latest active session for the current project and authenticated wallet user, using the same response shape as `forest.swap.session.get`. Use this method immediately before passing a session id to your backend for execution.
@@ -116,17 +115,15 @@ Returns the latest active session for the current project and authenticated wall
 ### `forest.swap.session.get`
 
 ```js
-callForest("forest.swap.session.get", {
-	sessionId: "9db7f2d8-5e03-4c73-96f9-31b99747d0c6",
-});
+await forest.swap.session.get("9db7f2d8-5e03-4c73-96f9-31b99747d0c6");
 ```
 
 Returns the stored session so your app can inspect status, limits, and expiry. Forest resolves router and pair addresses internally; HTML apps never provide or persist those addresses.
 
 > **WARN: Sessions do not re-route**
-
-Sessions do not fall back to a new route after router or pair changes. If the on-chain session
-route is no longer usable, the user must recreate the session.
+>
+> Sessions do not fall back to a new route after router or pair changes. If the on-chain session
+> route is no longer usable, the user must recreate the session.
 
 ```js
 {
@@ -154,24 +151,56 @@ route is no longer usable, the user must recreate the session.
 }
 ```
 
-HTML SDK session responses use base-unit integer strings for budgets. `limits` mirrors `session.snapshot` budget fields and exists only as a convenient place to read the configured session caps and expiry.
+Session responses use base-unit integer strings for budgets. `limits` mirrors `session.snapshot` budget fields and exists only as a convenient place to read the configured session caps and expiry.
 
 ### `forest.swap.session.revoke`
 
 ```js
-callForest("forest.swap.session.revoke", {
-	sessionId: "9db7f2d8-5e03-4c73-96f9-31b99747d0c6",
-});
+await forest.swap.session.revoke("9db7f2d8-5e03-4c73-96f9-31b99747d0c6");
 ```
 
 Revokes an active session through the connected wallet, then confirms the revoke transaction with Forest. This opens a wallet prompt and returns the same response shape as `forest.swap.session.get`, plus `txHash` when the revoke transaction is confirmed.
 
+## Hosted backend execution
+
+After the frontend obtains the current session, your hosted backend validates the requested trade and calls:
+
+```js
+return ctx.forest.executeSwapSession(sessionId, {
+	requestId,
+	direction: "buy",
+	projectAmount: "1000000000000000000",
+	forestAmountLimit: "1000000000000000000",
+});
+```
+
+This example requests exactly one game token for at most one FOREST token, using 18 decimals. Both inputs and execution-result amounts are base-unit strings. `requestId` is a stable UUID v4 for this trade. Forest checks that the verified player owns the session and that its limits still permit the trade.
+
+Forest supplies authentication and the timestamp. Save the trade's ID and confirmed outcome in your game data. Stop automatic retries if its outcome is uncertain.
+
+Get exact amounts from a [session quote](./swaps.md#session-quotes): pass its `projectAmount`, `forestAmountLimit`, and `expiresAt` as `deadline`.
+
+### Execution outcomes
+
+| Outcome                                     | Meaning                                           | Next step                                       |
+| ------------------------------------------- | ------------------------------------------------- | ----------------------------------------------- |
+| Success, `replayed: true` or `false`        | The trade is confirmed.                           | Record the receipt.                             |
+| `409` conflict                              | The request is still submitting or confirming.    | Retry later with the same `requestId` and body. |
+| `400` with `SWAP_SESSION_EXECUTOR_UNFUNDED` | The executor wallet has no gas; nothing ran.      | Fund the wallet, then use a new `requestId`.    |
+| `400` with `SWAP_SESSION_EXECUTION_EXPIRED` | A finalized block passed `deadline`; nothing ran. | Quote again and use a new `requestId`.          |
+
+Both codes are final: Forest stores them and returns them for every retry of that `requestId`, so the old request can never execute. Expiry is proven only for a `deadline` you set. Any other failure is not proof that nothing ran; keep the same `requestId`.
+
 ## Trusted Swap Session Execution
+
+### External backend for legacy HTML
 
 Uploaded HTML can request that a user enables a session, but execution must come from your trusted backend. Use the same server-only Settlement Signing Secret and HMAC header as settlement:
 
+`POST /playables/{projectId}/html/swap-sessions/{sessionId}/executions`
+
 ```http
-POST /campaigns/{projectId}/html/swap-sessions/{sessionId}/executions
+POST /playables/{projectId}/html/swap-sessions/{sessionId}/executions
 Content-Type: application/json
 X-Forest-Settlement-Signature: v1=<hex-hmac>
 ```
