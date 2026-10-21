@@ -1,6 +1,7 @@
 ---
 name: portfolio
 description: Use when an AI agent needs to read a user's positions, wallet and staked balances, PnL, recent trades, or live prices and candles across Forest Protocol tokens, or to plan (not execute) a rebalance or take-profit — via the Forest REST API with a wallet the agent can sign with.
+license: MIT
 ---
 
 # Forest Portfolio (read & plan)

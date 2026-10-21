@@ -1,6 +1,7 @@
 ---
 name: html-playkit
 description: Use when building or debugging a Forest game or app — a Forest Harness game (`@forest/runtime` frontend, hosted backend with `ctx.player`, `ctx.db`, `ctx.forest`) or a legacy HTML upload on the iframe postMessage bridge. Covers swaps, FOREST session quotes, swap sessions and their failure codes, game balance, burns, game actions (settlement), player identity, display-vs-base-unit amounts, and the trusted-backend boundary.
+license: MIT
 ---
 
 # Forest Playkit

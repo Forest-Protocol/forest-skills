@@ -51,3 +51,7 @@ Or symlink a single skill into your skills directory:
 ```bash
 ln -s "$(pwd)/skills/html-playkit" ~/.claude/skills/html-playkit
 ```
+
+## License
+
+MIT — see [LICENSE](LICENSE).
