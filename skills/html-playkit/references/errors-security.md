@@ -16,7 +16,9 @@ try {
 }
 ```
 
-A hosted backend failure can surface as `RUNTIME_FAILED` without exposing its internal details. Use Harness Preview diagnostics to investigate. An uncertain economic result is not permission to charge again: retain action IDs and confirmed outcomes, and stop automatic retries.
+A hosted backend failure can surface as `RUNTIME_FAILED` without exposing its internal details. Inside a backend, `ctx.forest` calls reject with the Forest error `code` when one exists (such as `ACTION_ID_REUSED` or `SWAP_SESSION_EXECUTION_EXPIRED`) and with `RUNTIME_FAILED` otherwise, including HTTP conflicts. Use Harness Preview diagnostics to investigate. Retry settlements with the same `actionId` and amounts; never create a new action for an uncertain charge.
+
+The Harness SDK can also reject with `TIMEOUT` (no answer within 120 seconds), `TOO_MANY_REQUESTS` (more than 64 calls in flight), and `FRAME_CLOSED` (the parent page went away).
 
 For legacy HTML, handle `error` message responses as first-class UI states. The user may reject a wallet request, the quote may fail, or the token may not support swaps.
 
@@ -43,45 +45,45 @@ Returned to the iframe over the RPC interface.
 | `INVALID_PARAMS`                   | The RPC params are missing or have the wrong shape.                                                    | Fix the params for the method (use `{}` when there are none).                                 |
 | `GAME_BALANCE_FAILED`              | Forest could not load the player Game Balance.                                                         | Surface a transient error state and retry.                                                    |
 | `GAME_TRANSACTIONS_FAILED`         | Forest could not load the player's Game Balance transaction feed.                                      | Surface a transient error state and retry.                                                    |
-| `GAME_BURN_FAILED`                 | Forest could not complete the wallet-side burn transfer.                                               | Show the error, do not settle the burn, and let the user retry with a fresh intent if needed. |
+| `GAME_BURN_FAILED`                 | Forest could not load burn history or the burn summary.                                                | Retry the read later. A failed burn transfer reports `TRANSACTION_FAILED` or `USER_REJECTED`. |
 | `GAME_WALLET_ACTION_IN_PROGRESS`   | A wallet-side game action is already in progress.                                                      | Wait for the in-flight action to finish before starting another.                              |
 | `GAME_WALLET_UNAVAILABLE`          | Deposit or withdrawal is not configured for this game.                                                 | Hide wallet controls — the project has no wallet flow.                                        |
 | `GAME_ACTION_AUTHORIZATION_FAILED` | Forest could not create an Action Authorization.                                                       | Retry with a fresh UUID v4 `actionId`.                                                        |
 
 ## Swap and session errors
 
-| Code                             | Cause                                                                     | Resolution                                                      |
-| -------------------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| `INVALID_AMOUNT`                 | The swap amount is missing, zero, negative, or not a finite decimal.      | Ask the user for a positive display amount.                     |
-| `QUOTE_FAILED`                   | Forest could not quote the requested amount.                              | Retry, or adjust the amount.                                    |
-| `SWAP_UNAVAILABLE`               | This token cannot be swapped through the current route.                   | Disable swap UI for this token.                                 |
-| `SWAP_IN_PROGRESS`               | A swap or session wallet flow is already in progress.                     | Wait for the in-flight flow to finish before starting another.  |
-| `CONFIG_TIMEOUT`                 | Direction or slippage did not apply in time.                              | Re-apply the config and retry.                                  |
-| `SWAP_SESSION_DISABLED`          | Auto-swaps are disabled for this project.                                 | Do not render session controls — `autoSwapsEnabled` is `false`. |
-| `SWAP_SESSION_FAILED`            | Forest could not create or load the swap session.                         | Retry, or have the user recreate the session.                   |
-| `SWAP_SESSION_EXECUTOR_UNFUNDED` | The session executor wallet has no gas. The request never ran.            | Fund the wallet, then retry with a new `requestId`.             |
-| `SWAP_SESSION_EXECUTION_EXPIRED` | A finalized block passed the request's `deadline`. The request never ran. | Quote again and retry with a new `requestId`.                   |
+| Code                             | Cause                                                                                                | Resolution                                                                            |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `INVALID_AMOUNT`                 | A session quote amount has more decimals than the pay token, or is zero in base units.               | Ask for an amount the token can represent. Malformed amounts return `INVALID_PARAMS`. |
+| `QUOTE_FAILED`                   | Forest could not quote the requested amount.                                                         | Retry, or adjust the amount.                                                          |
+| `SWAP_UNAVAILABLE`               | This token cannot be swapped through the current route.                                              | Disable swap UI for this token.                                                       |
+| `SWAP_IN_PROGRESS`               | A swap or session wallet flow is already in progress.                                                | Wait for the in-flight flow to finish before starting another.                        |
+| `CONFIG_TIMEOUT`                 | Direction or slippage did not apply in time.                                                         | Re-apply the config and retry.                                                        |
+| `SWAP_SESSION_DISABLED`          | Auto-swaps are disabled for this project. Session RPCs only; backend execution fails without a code. | Do not render session controls.                                                       |
+| `SWAP_SESSION_FAILED`            | Forest could not create or load the swap session.                                                    | Retry, or have the user recreate the session.                                         |
+| `SWAP_SESSION_EXECUTOR_UNFUNDED` | The session executor wallet has no gas. The request never ran.                                       | Fund the wallet, then retry with a new `requestId`.                                   |
+| `SWAP_SESSION_EXECUTION_EXPIRED` | A finalized block passed the request's `deadline`. The request never ran.                            | Quote again and retry with a new `requestId`.                                         |
 
 ## Settlement errors
 
 These are the underlying settlement and burn codes. Signature and HMAC errors apply to external backends for legacy HTML; hosted backends use Forest-provided authentication, and the frontend may see a general runtime failure instead. Swap-session execution can also return uncoded HTTP errors for session state or route validation.
 
-| Code                                       | Cause                                                                                            | Resolution                                                                                    |
-| ------------------------------------------ | ------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
-| `GAME_SETTLEMENT_SIGNING_SECRET_MISSING`   | The project has no active Settlement Signing Secret.                                             | Create a secret in the project editor's HTML Settlement card.                                 |
-| `RAW_BODY_UNAVAILABLE`                     | Forest could not access the exact raw request body needed for HMAC verification.                 | Ensure the request is sent as a normal JSON body and contact Forest support if this persists. |
-| `SETTLEMENT_SIGNATURE_MISSING`             | The `X-Forest-Settlement-Signature` header is missing.                                           | Send the signature header on every signed request.                                            |
-| `SETTLEMENT_SIGNATURE_VERSION_UNSUPPORTED` | The header does not use the `v1=` format.                                                        | Prefix the hex HMAC with `v1=`.                                                               |
-| `SETTLEMENT_SIGNATURE_MALFORMED`           | The signature is not a 64-character hex HMAC.                                                    | Hex-encode the full HMAC-SHA256 digest.                                                       |
-| `INVALID_SETTLEMENT_SIGNATURE`             | The request body does not match the signature.                                                   | Sign the exact bytes you send — do not reserialize the body after signing.                    |
-| `ACTION_AUTHORIZATION_UNAVAILABLE`         | The action was not authorized, was already used, or expired.                                     | Re-authorize with a fresh `actionId`, created close to the action.                            |
-| `SETTLEMENT_TIMESTAMP_STALE`               | The signed `timestamp` is outside the request-freshness window (~5 min).                         | On retry, replay the **original** signed body — never re-sign with a new timestamp.           |
-| `ACTION_ID_REUSED`                         | The same `actionId` was reused with a different request body.                                    | Resend the byte-identical body, or use a new `actionId` for a new action.                     |
-| `INVALID_SETTLEMENT_AMOUNT`                | The amounts are invalid (e.g. negative, or both `0` for a settlement).                           | Send non-negative base-unit integer strings; at least one of debit/credit `> 0`.              |
-| `INVALID_SETTLEMENT_METADATA`              | Burn `metadata` exceeds the serialized size limit.                                               | Keep signed metadata under 4 KB.                                                              |
-| `DEBIT_LIMIT_EXCEEDED`                     | The amount exceeds the authorized debit limit.                                                   | Authorize a debit limit at least the amount (never `0` for a burn).                           |
-| `BURN_TXHASH_REQUIRED`                     | A burn settlement omitted the required on-chain `txHash`.                                        | Submit burns only after `forest.game.burn` returns a confirmed transaction hash.              |
-| `BURN_TX_HASH_REUSED`                      | The `txHash` is already recorded under a different `actionId`, or already recorded as a deposit. | Do not replay an old burn — each `txHash` backs exactly one burn.                             |
+| Code                                       | Cause                                                                                            | Resolution                                                                                                                               |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `GAME_SETTLEMENT_SIGNING_SECRET_MISSING`   | The project has no active Settlement Signing Secret.                                             | Create a secret in the project editor's HTML Settlement card.                                                                            |
+| `RAW_BODY_UNAVAILABLE`                     | Forest could not access the exact raw request body needed for HMAC verification.                 | Ensure the request is sent as a normal JSON body and contact Forest support if this persists.                                            |
+| `SETTLEMENT_SIGNATURE_MISSING`             | The `X-Forest-Settlement-Signature` header is missing.                                           | Send the signature header on every signed request.                                                                                       |
+| `SETTLEMENT_SIGNATURE_VERSION_UNSUPPORTED` | The header does not use the `v1=` format.                                                        | Prefix the hex HMAC with `v1=`.                                                                                                          |
+| `SETTLEMENT_SIGNATURE_MALFORMED`           | The signature is not a 64-character hex HMAC.                                                    | Hex-encode the full HMAC-SHA256 digest.                                                                                                  |
+| `INVALID_SETTLEMENT_SIGNATURE`             | The request body does not match the signature.                                                   | Sign the exact bytes you send — do not reserialize the body after signing.                                                               |
+| `ACTION_AUTHORIZATION_UNAVAILABLE`         | The action was not authorized, was already used, or expired.                                     | Re-authorize with a fresh `actionId`, created close to the action.                                                                       |
+| `SETTLEMENT_TIMESTAMP_STALE`               | The signed `timestamp` is outside the request-freshness window (~5 min).                         | Settlements and burns: replay the original body only within the window. Swap executions: re-sign the same fields with a new `timestamp`. |
+| `ACTION_ID_REUSED`                         | The same `actionId` was reused with a different request body.                                    | Resend the byte-identical body, or use a new `actionId` for a new action.                                                                |
+| `INVALID_SETTLEMENT_AMOUNT`                | The amounts are invalid (e.g. negative, or both `0` for a settlement).                           | Send non-negative base-unit integer strings; at least one of debit/credit `> 0`.                                                         |
+| `INVALID_SETTLEMENT_METADATA`              | Burn `metadata` exceeds the serialized size limit.                                               | Keep signed metadata under 4 KB.                                                                                                         |
+| `DEBIT_LIMIT_EXCEEDED`                     | The amount exceeds the authorized debit limit.                                                   | Authorize a debit limit at least the amount (never `0` for a burn).                                                                      |
+| `BURN_TXHASH_REQUIRED`                     | A burn settlement omitted the required on-chain `txHash`.                                        | Submit burns only after `forest.game.burn` returns a confirmed transaction hash.                                                         |
+| `BURN_TX_HASH_REUSED`                      | The `txHash` is already recorded under a different `actionId`, or already recorded as a deposit. | Do not replay an old burn — each `txHash` backs exactly one burn.                                                                        |
 
 > **INFO: Two authorization codes, not one**
 >

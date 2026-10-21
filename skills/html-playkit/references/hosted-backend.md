@@ -4,7 +4,7 @@ Forest Harness games keep trusted rules in a Forest-hosted backend. The frontend
 
 ## Backend methods
 
-The backend bundle exports only `runtime` and `methods`. The methods object must be frozen, have a null prototype, and contain its own functions. The Harness starter already uses this shape.
+The backend bundle exports only `runtime` and `methods`. The methods object must be frozen, have a null prototype, and contain its own functions. The Harness starter already uses this shape. `defineBackend` from `@forest/runtime` does not freeze the object, so wrap it as shown.
 
 ```ts title="backend/index.ts"
 import type { BackendContext } from "@forest/runtime";
@@ -53,6 +53,7 @@ This example lets each player add an item. A real game should validate the actio
 | `ctx.player.id`             | Verified Forest player ID. Use it for private data and ownership checks. |
 | `ctx.player.walletAddress`  | Verified wallet address, or `null`.                                      |
 | `ctx.token`                 | The game's token: `id`, `symbol`, `decimals`, and `address`.             |
+| `ctx.project.id`            | The game's project ID.                                                   |
 | `ctx.db.execute(sql, args)` | Run one parameterized SQL statement. Returns `rows` and `rowsAffected`.  |
 | `ctx.db.batch(statements)`  | Run an atomic group of `{ sql, args }` statements.                       |
 | `ctx.forest`                | Settlements, burns, approved swap execution, and economic reads.         |
@@ -62,11 +63,46 @@ This example lets each player add an item. A real game should validate the actio
 
 Each invocation has fresh globals. Bundle dependencies into the backend: it cannot load runtime imports, use Node globals, read files or environment variables, or make arbitrary network requests.
 
+`forest.backend.call` rejects with a plain error carrying no `code` when a method throws. Return `{ ok: true, data }` or `{ ok: false, error: { code, message } }` from methods that have expected failures.
+
+## Limits
+
+| Limit                             | Value                            |
+| --------------------------------- | -------------------------------- |
+| Backend bundle                    | 4 MiB; up to 64 methods          |
+| `ctx.input`                       | 64 KiB JSON                      |
+| Method result                     | 256 KiB JSON, depth 32           |
+| CPU / wall time per invocation    | 3 s / 15 s by default            |
+| `ctx.db` calls per invocation     | 32; a `batch` counts as one call |
+| Statements per `batch`            | 1–32                             |
+| SQL text / arguments              | 16 KiB / 128 JSON scalars        |
+| Rows returned per invocation      | 1,000 total, 128 columns         |
+| SQL timeout                       | 3 s, then `SQL_OUTCOME_UNKNOWN`  |
+| `ctx.forest` calls per invocation | 32                               |
+
+Batch reads together to stay inside the call budget. Treat `SQL_OUTCOME_UNKNOWN` like any uncertain write: reconcile before repeating it.
+
+## `forest.json`
+
+```json
+{
+	"schemaVersion": 2,
+	"runtime": "forest/2",
+	"backend": true,
+	"database": true,
+	"autoSwaps": false,
+	"jobs": [{ "method": "closeRound", "everySeconds": 900 }]
+}
+```
+
+`database: true` requires `backend: true`. `autoSwaps: true` lets players enable swap sessions. `jobs` is optional: up to 4 entries, sorted by `method`, each running a backend method every 60 to 86,400 seconds. A job runs with `ctx.player` set to `null`, every `ctx.forest` call fails with `RUNTIME_PLAYER_REQUIRED`, and players cannot call job methods. Preview does not run jobs on a timer.
+
 ## Schema changes and persistence
 
 Set `database: true` and `backend: true` in `forest.json`. Put ordered schema files in `migrations/`. Forest applies them before the game can launch; Preview applies them to its local database.
 
-- Supported schema operations are `CREATE TABLE`, `CREATE INDEX`, and `ALTER TABLE ADD COLUMN`.
+- Additive operations are `CREATE TABLE`, `CREATE INDEX`, and `ALTER TABLE ADD COLUMN`. `DROP TABLE`, `DROP INDEX`, `DROP COLUMN`, and renames are destructive and need explicit approval when updating a live game.
+- Schema files cannot use SQL functions such as `now()`, subqueries, `CREATE TABLE ... AS SELECT`, views, or triggers. Set timestamps from the backend instead.
 - Applied files must stay unchanged. Add a new file for a schema change.
 - Runtime queries can select, insert, update, and delete data, but cannot create or alter schema.
 - Use parameters for values and database constraints for uniqueness. Explicit transaction statements are unavailable; use `ctx.db.batch` for atomic writes.
@@ -94,7 +130,7 @@ Forest supplies authentication and timestamps. Settlement and burn **inputs** us
 
 Wallet transactions remain frontend SDK operations. Hosted backends do not expose legacy player-state, playable-state, store, leaderboard, or identity-redeem helpers; use SQL for application data and `ctx.player` for identity.
 
-A SQL write and a Forest settlement are separate operations. Preserve action IDs and outcomes, and reconcile an uncertain result before trying another charge. Do not assume retrying an entire backend method is harmless.
+A SQL write and a Forest settlement are separate operations. Preserve action IDs and outcomes. Repeating `settleAction` or `settleBurn` with the same `actionId` and amounts returns the recorded result with `replayed: true`; different amounts fail with `ACTION_ID_REUSED`. Your own SQL writes are not replayed, so make them idempotent before retrying a whole method.
 
 ## Declared game economy
 

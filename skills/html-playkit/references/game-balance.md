@@ -75,7 +75,7 @@ Successful responses return:
 
 ### `forest.game.withdraw`
 
-Asks Forest to withdraw player Game Balance back to the connected wallet. Forest requests the withdrawal signature from the API, opens the connected wallet, submits the on-chain withdrawal, confirms it through the API, then returns the updated Game Balance.
+Asks Forest to withdraw player Game Balance back to the connected wallet. The Game Vault must cover the amount; an underfunded vault blocks withdrawals. Forest requests the withdrawal signature from the API, opens the connected wallet, submits the on-chain withdrawal, confirms it through the API, then returns the updated Game Balance.
 
 ```js
 await forest.game.withdraw({
@@ -122,6 +122,7 @@ await forest.game.transactions({
 | --- | --- | --- | --- |
 | `page` | number | no | Page number. Defaults to 1. |
 | `perPage` | number | no | Number of rows per page. Defaults to 20. |
+| `direction` | "asc" \| "desc" | no | Sort by creation time. Defaults to `desc`. |
 
 Successful responses return:
 

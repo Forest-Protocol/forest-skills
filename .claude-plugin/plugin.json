@@ -6,5 +6,6 @@
     "name": "Forest"
   },
   "homepage": "https://docs.forest.inc",
+  "repository": "https://github.com/Forest-Protocol/forest-skills",
   "keywords": ["forest", "playkit", "html-sdk", "web3", "games"]
 }

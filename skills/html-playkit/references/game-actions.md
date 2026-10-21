@@ -82,7 +82,7 @@ const balance = await forest.game.balance();
 
 The player needs one token in Game Balance, and the game needs enough vault capacity for the credit. The settlement result contains display strings such as `debitAmount: "1.0"` and `creditAmount: "0.5"`.
 
-Forest supplies authentication and the timestamp. Keep each action ID and its confirmed outcome in your game data. If the result is uncertain, stop automatic retries: a later backend invocation receives a new timestamp, so calling it again is not a byte-identical settlement replay.
+Forest supplies authentication and the timestamp. Keep each action ID and its confirmed outcome in your game data. If the result is uncertain, call `settleAction` again with the same `actionId` and amounts: Forest returns the recorded settlement with `replayed: true` instead of charging twice.
 
 ### External backend for legacy HTML
 
@@ -195,7 +195,8 @@ Settlement responses return display decimal amounts. Settlement requests use bas
 >
 > If a settlement request times out or the response is lost, retry by sending the **same**
 > `actionId`, JSON body, and signature again. Do **not** create a new timestamp or change
-> settlement amounts for the same `actionId`.
+> settlement amounts for the same `actionId`. Replays are accepted only inside the ~5 minute
+> freshness window; after it, confirm the outcome from Game Balance transactions instead.
 
 Settlement failures use the shared [settlement error taxonomy](./errors-security.md#settlement-errors) (signature, authorization, timestamp, amount, and reuse errors).
 

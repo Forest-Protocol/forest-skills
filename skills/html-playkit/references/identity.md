@@ -137,7 +137,7 @@ const res = await fetch(`${FOREST_API}/playables/${projectId}/html/identity/rede
 	headers: { "Content-Type": "application/json", "X-Forest-Settlement-Signature": signature },
 	body,
 });
-// { userId, walletAddress, nonce, issuedAt }
+// { userId, walletAddress, username, nonce, issuedAt }
 ```
 
 Rules that matter:

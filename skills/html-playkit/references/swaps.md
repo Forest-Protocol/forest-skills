@@ -1,6 +1,6 @@
 # Swaps
 
-Swaps run through the connected wallet. Quote is a read; buy and sell open the wallet. Amounts are display decimal strings — see [Amounts](./overview.md#amounts-display-vs-base-units). For user-approved auto-swaps, see [Swap Sessions](./swap-sessions.md).
+Swaps run through the connected wallet. Quote is a read; buy and sell open the wallet. Params are strict: unknown keys, numeric amounts, or `currency`/`direction` on buy and sell fail with `INVALID_PARAMS`. A newer quote replaces an in-flight one, which then gets no answer. Amounts are display decimal strings — see [Amounts](./overview.md#amounts-display-vs-base-units). For user-approved auto-swaps, see [Swap Sessions](./swap-sessions.md).
 
 For Harness games, import `{ forest }` from `@forest/runtime` and await the calls below. Legacy HTML uploads pass the same params to `callForest("forest.swap.quote", params)` and the other named methods.
 
@@ -22,7 +22,7 @@ await forest.swap.quote({
 | --- | --- | --- | --- |
 | `amount` | string (display decimal) | yes | Positive display decimal string. |
 | `direction` | "buy" \| "sell" | yes | Swap direction. |
-| `slippage` | number (percent) | no | Percent slippage. Forest uses its default when omitted. |
+| `slippage` | number (percent) | no | Percent slippage, clamped to 0.01–5. Defaults to 0.5. |
 | `currency` | "FOREST" | no | Returns an executable swap session quote instead of the wallet quote. `amount` must then be an exact decimal string. |
 
 ### Session quotes
@@ -51,11 +51,13 @@ For a buy, `amount` is the most FOREST to spend, including slippage. For a sell,
 | `forestToken, projectToken` | string (address) | yes | Token addresses the quote applies to. |
 | `forestDecimals, projectDecimals` | number | yes | Token decimals for converting the base-unit amounts. |
 
-`snapshot` carries the same amounts as display strings for UI. Send `sessionQuote` to your backend, which passes its amounts and `expiresAt` to `executeSwapSession`. Fetch a new quote after `expiresAt`.
+`snapshot` here is smaller than the wallet snapshot below: `direction`, `slippage`, `payToken.symbol`, `receiveToken.symbol`, and `quote.payAmount`/`quote.receiveAmount` as display strings. Send `sessionQuote` to your backend, which passes its amounts and `expiresAt` to `executeSwapSession`. Fetch a new quote after `expiresAt`.
+
+Session quotes fail with `QUOTE_FAILED` when the chain head is stale or the trade cannot fit the budget, and with `SWAP_UNAVAILABLE` when the token has no Forest pair. Harness Preview ignores `currency` and returns no `sessionQuote`; test that path with a fixture.
 
 ### `forest.swap.buy`
 
-Submits a buy transaction through the connected wallet. `amount` is the amount of the pay token to spend.
+Submits a buy transaction through the connected wallet. `amount` is the amount of the pay token to spend. Success returns `{ txHash, snapshot }`.
 
 ```js
 await forest.swap.buy({
@@ -67,11 +69,11 @@ await forest.swap.buy({
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
 | `amount` | string (display decimal) | yes | Positive display decimal string of pay token to spend. |
-| `slippage` | number (percent) | no | Percent slippage. Forest uses its default when omitted. |
+| `slippage` | number (percent) | no | Percent slippage, clamped to 0.01–5. Defaults to 0.5. |
 
 ### `forest.swap.sell`
 
-Submits a sell transaction through the connected wallet. `amount` is the amount of the launched token to sell.
+Submits a sell transaction through the connected wallet. `amount` is the amount of the launched token to sell. Success returns `{ txHash, snapshot }`.
 
 ```js
 await forest.swap.sell({
@@ -83,7 +85,7 @@ await forest.swap.sell({
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
 | `amount` | string (display decimal) | yes | Positive display decimal string of launched token to sell. |
-| `slippage` | number (percent) | no | Percent slippage. Forest uses its default when omitted. |
+| `slippage` | number (percent) | no | Percent slippage, clamped to 0.01–5. Defaults to 0.5. |
 
 ## Snapshot Reference
 

@@ -33,9 +33,16 @@ backend settles credit, executes swap sessions, and records burns.
 4. **Swap-session amounts come from a session quote.** Call `forest.swap.quote` with
    `currency: "FOREST"` and pass its `sessionQuote` `projectAmount`, `forestAmountLimit`, and
    `expiresAt` (as `deadline`) to `executeSwapSession`. The plain quote is display-only.
-5. **Keep `requestId` stable until the outcome is final.** A `409` or any uncoded failure means
-   retry the same `requestId` and body. Only `SWAP_SESSION_EXECUTOR_UNFUNDED` and
-   `SWAP_SESSION_EXECUTION_EXPIRED` prove the request never ran; only then use a new ID.
+5. **Keep `requestId` stable until the outcome is final.** In a hosted backend every failure
+   except the two codes below arrives as `RUNTIME_FAILED`; retry the same `requestId` and
+   payload. Only `SWAP_SESSION_EXECUTOR_UNFUNDED` and `SWAP_SESSION_EXECUTION_EXPIRED` prove the
+   request never ran; only then use a new ID.
+6. **Settlements replay by `actionId`.** Calling `settleAction`/`settleBurn` again with the same
+   `actionId` and amounts returns `replayed: true` instead of charging twice. Your own SQL
+   writes are not replayed — make them idempotent.
+7. **Stay inside the backend budget.** 32 `ctx.db` calls and 32 `ctx.forest` calls per
+   invocation; batch reads. Migrations reject SQL functions such as `now()`. Limits, jobs, and
+   `forest.json` are in `references/hosted-backend.md`.
 
 ## Which reference to load
 
@@ -43,19 +50,27 @@ backend settles credit, executes swap sessions, and records burns.
 | --- | --- |
 | Model, balances, amounts, Preview | `references/overview.md` |
 | First game: frontend + hosted backend | `references/quickstart.md` |
-| Backend methods, `ctx.player`, `ctx.db`, `ctx.forest` | `references/hosted-backend.md` |
+| Backend methods, `ctx`, limits, `forest.json`, scheduled jobs | `references/hosted-backend.md` |
 | Quote / buy / sell, FOREST session quotes | `references/swaps.md` |
 | User-approved auto-swaps and execution outcomes | `references/swap-sessions.md` |
 | Read / deposit / withdraw Game Balance | `references/game-balance.md` |
 | Token burns (in-game sinks) | `references/burns.md` |
 | Game action authorization → settlement | `references/game-actions.md` |
 | Wallet events and player identity | `references/identity.md` |
-| Own database for a legacy HTML backend | `references/persistent-data.md` |
+| Legacy HTML only: your own external database | `references/persistent-data.md` |
 | RPC envelope and full method list | `references/rpc-reference.md` |
 | Error codes and security model | `references/errors-security.md` |
 
-`references/*.md` mirror the canonical docs at
-[docs.forest.inc](https://docs.forest.inc/developers/forest-playkit); the docs win if they differ.
+`references/*.md` mirror the docs at
+[docs.forest.inc](https://docs.forest.inc/developers/forest-playkit). Harness games: skip sections
+marked legacy (`callForest`, HMAC signing, identity codes).
+
+## Preview differs from live
+
+Harness Preview simulates the economy (`simulated: true`): swaps run at a fixed 1:1, session
+quotes return no `sessionQuote`, `swap.session.current` resolves `{ session: null }` instead of
+failing, the two swap failure codes never occur, and jobs do not run on a timer. Cover those
+paths with test fixtures, and never present Preview numbers as market data.
 
 ## Common mistakes
 
@@ -67,5 +82,7 @@ backend settles credit, executes swap sessions, and records burns.
   `currency: "FOREST"` session quote.
 - Minting a new `requestId` after a timeout or `409` (double-trade risk).
 - Caching a swap-session id, or treating an approval hash as completion.
-- Treating Preview results marked `simulated: true` as live market data.
+- Calling `forest.backend.call` and expecting an error `code` — it throws a plain error;
+  return `{ ok, data | error }` envelopes from methods instead.
+- Using `defineBackend(...)` without `Object.freeze` — the backend fails to load.
 - Querying the database from the frontend; use backend methods.

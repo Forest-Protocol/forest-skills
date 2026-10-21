@@ -4,8 +4,9 @@ Swap sessions are user-approved auto-swap permissions. The iframe asks the user 
 
 > **WARN: Gate session UI on availability**
 >
-> If automatic swaps are disabled, do **not** render session controls — execution will be rejected
-> with `SWAP_SESSION_DISABLED`.
+> If automatic swaps are disabled, do **not** render session controls. Session RPCs fail with
+> `SWAP_SESSION_DISABLED`, and backend execution fails without a code. Auto-swaps are never
+> available for external tokens or native FOREST.
 
 ## How sessions work
 
@@ -43,7 +44,9 @@ Users can revoke active sessions from the Forest UI or via
 
 > **INFO: Executor wallet needs gas**
 >
-> The managed executor wallet must hold native gas on the configured chain for executions to land.
+> The project's executor wallet must hold native gas on the configured chain for executions to
+> land. The creator funds it from the project's auto-swap settings; while it is empty, executions
+> fail with `SWAP_SESSION_EXECUTOR_UNFUNDED`.
 
 ## Session Methods
 
@@ -58,6 +61,8 @@ await forest.swap.session.create({
 	expiresAt: Math.floor(Date.now() / 1000) + 86400,
 });
 ```
+
+If the player already has an active session for this project, `create` returns it unchanged instead of opening the wallet; revoke it first to change budgets.
 
 Unlimited budget:
 
@@ -110,7 +115,7 @@ Budgets are display decimal strings. Use `null` for a side that should be unlimi
 await forest.swap.session.current();
 ```
 
-Returns the latest active session for the current project and authenticated wallet user, using the same response shape as `forest.swap.session.get`. Use this method immediately before passing a session id to your backend for execution.
+Returns the latest active session for the current project and authenticated wallet user, using the same response shape as `forest.swap.session.get`. Use this method immediately before passing a session id to your backend for execution. With no active session it fails with `SWAP_SESSION_FAILED`; Harness Preview resolves `{ session: null, limits: null }` instead.
 
 ### `forest.swap.session.get`
 
@@ -182,14 +187,16 @@ Get exact amounts from a [session quote](./swaps.md#session-quotes): pass its `p
 
 ### Execution outcomes
 
-| Outcome                                     | Meaning                                           | Next step                                       |
-| ------------------------------------------- | ------------------------------------------------- | ----------------------------------------------- |
-| Success, `replayed: true` or `false`        | The trade is confirmed.                           | Record the receipt.                             |
-| `409` conflict                              | The request is still submitting or confirming.    | Retry later with the same `requestId` and body. |
-| `400` with `SWAP_SESSION_EXECUTOR_UNFUNDED` | The executor wallet has no gas; nothing ran.      | Fund the wallet, then use a new `requestId`.    |
-| `400` with `SWAP_SESSION_EXECUTION_EXPIRED` | A finalized block passed `deadline`; nothing ran. | Quote again and use a new `requestId`.          |
+| Outcome                              | Meaning                                           | Next step                                       |
+| ------------------------------------ | ------------------------------------------------- | ----------------------------------------------- |
+| Success, `replayed: true` or `false` | The trade is confirmed.                           | Record the receipt.                             |
+| `SWAP_SESSION_EXECUTOR_UNFUNDED`     | The executor wallet has no gas; nothing ran.      | Fund the wallet, then use a new `requestId`.    |
+| `SWAP_SESSION_EXECUTION_EXPIRED`     | A finalized block passed `deadline`; nothing ran. | Quote again and use a new `requestId`.          |
+| Any other failure, `RUNTIME_FAILED`  | Still submitting, confirming, or unknown.         | Retry later with the same `requestId` and body. |
 
-Both codes are final: Forest stores them and returns them for every retry of that `requestId`, so the old request can never execute. Expiry is proven only for a `deadline` you set. Any other failure is not proof that nothing ran; keep the same `requestId`.
+Both codes are final: Forest stores them and returns them for every retry of that `requestId`, so the old request can never execute. Expiry is proven only for a `deadline` you set; set it from the session quote. In a hosted backend every other failure, including an HTTP conflict, arrives as `RUNTIME_FAILED`, which is not proof that nothing ran. Legacy backends see the HTTP status and the same codes.
+
+Harness Preview executes swaps at a fixed 1:1 rate and cannot produce either failure code.
 
 ## Trusted Swap Session Execution
 
@@ -226,7 +233,7 @@ X-Forest-Settlement-Signature: v1=<hex-hmac>
 | `timestamp` | number (Unix seconds) | yes | Current Unix timestamp in seconds. |
 | `deadline` | number (Unix seconds) | no | Optional router deadline. Forest defaults it when omitted. |
 
-Sign the exact JSON string you send. Store the signed body by `sessionId + requestId` and replay that same body if the response is lost. Reusing a request id with a different direction, amount, or deadline is rejected.
+Sign the exact JSON string you send. Store the request fields by `sessionId + requestId`. If the response is lost, resend the same fields with a fresh `timestamp` and a new signature; Forest matches retries on direction, amounts, and deadline, and rejects a stale `timestamp`. Reusing a request id with a different direction, amount, or deadline is rejected.
 
 A successful response contains the confirmed execution transaction:
 
@@ -245,6 +252,6 @@ A successful response contains the confirmed execution transaction:
 }
 ```
 
-Forest records confirmed executions only after the contract emits the matching `SwapSessionExecuted` event. If your backend loses the response, retry the same `requestId` and exact signed body. Signature and timestamp failures use the shared [settlement error taxonomy](./errors-security.md#settlement-errors); session state, route mismatches, and chain-validation failures can return normal HTTP errors without an app-specific `code`.
+Forest records confirmed executions only after the contract emits the matching `SwapSessionExecuted` event. If your backend loses the response, retry the same `requestId` and fields with a fresh signed `timestamp`. Signature and timestamp failures use the shared [settlement error taxonomy](./errors-security.md#settlement-errors); session state, route mismatches, and chain-validation failures can return normal HTTP errors without an app-specific `code`.
 
 Embedded HTML apps can revoke sessions with `forest.swap.session.revoke`; users can also revoke active sessions from Forest UI.
