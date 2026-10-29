@@ -22,7 +22,7 @@ Never invent a trading endpoint.
 
 ## Authenticate (SIWE → JWT)
 
-1. `POST /auth/ethereum/challenge` → `201 { "nonce": "..." }` (single-use, expires after 5
+1. `POST /auth/ethereum/challenge` → `200 { "nonce": "..." }` (single-use, expires after 5
    minutes).
 2. Build a standard EIP-4361 message for the user's wallet address with that nonce, using
    `forest.inc` as the domain and `https://forest.inc` as the URI; sign it with the wallet.
