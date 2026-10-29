@@ -39,7 +39,7 @@ Never invent a trading endpoint.
 | `GET /me/portfolio?currency=usd` | yes | Positions, balances, PnL, and summary. `currency`: `usd` (default) or `bnb`. |
 | `GET /me/portfolio/activity?currency=usd` | yes | Last 10 buys/sells across the user's wallets. |
 | `GET /tokens` | no | Paginated token list with market data. See query below. |
-| `GET /tokens/:tokenId?currency=usd` | no | One token by UUID. |
+| `GET /tokens/:tokenId?currency=usd` | no | One token by UUID or case-insensitive symbol (optional leading `$`). Unpublished tokens require owner auth. |
 | `GET /tokens/:tokenId/stats` | no | Derived token stats. |
 | `GET /tokens/:tokenId/holders` | no | Paginated holders. |
 | `GET /pairs/:pairAddress/candles` | no | OHLCV. `interval`: `1m 5m 15m 1h 4h 1d 1w` (default `1h`); `limit` 1–1000 (default 500); `to` = exclusive ISO cursor; `currency`. |
@@ -100,7 +100,8 @@ currentPage, lastPage } }`.
 }
 ```
 
-Market and trade fields are nullable. `GET /me/portfolio/activity` returns
+Market and trade fields are nullable; trade fields can be omitted when there is no trade
+history. `GET /me/portfolio/activity` returns
 `[{ action: "Buy" | "Sell", tokenSymbol, amount /* base units */, price /* requested currency,
 nullable */, timestamp, txHash, pairAddress }]`.
 

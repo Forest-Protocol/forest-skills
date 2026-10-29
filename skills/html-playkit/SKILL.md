@@ -24,9 +24,10 @@ backend settles credit, executes swap sessions, and records burns.
 ## Rules that cause most bugs
 
 1. **Amounts: display vs base units.** Frontend SDK calls take **display** strings (`"1"`,
-   `"0.25"`). Backend settlement, burn, and swap-execution inputs, session budgets, and
-   `sessionQuote` amounts are **base-unit integer strings**. Do the math with `bigint`; never
-   pass base units through `Number`.
+   `"0.25"`), including swap-session request budgets. Backend settlement, burn, and
+   swap-execution inputs, swap-session response budgets, and `sessionQuote` amounts are
+   **base-unit integer strings**. Do the math with `bigint`; never pass base units through
+   `Number`.
 2. **Identity is not the wallet address.** The address the frontend sees is for display only.
    Hosted backends use `ctx.player.id`; legacy backends run the identity handshake.
 3. **Three separate pools of value.** Wallet-held Project Token ≠ Game Balance (per-player
