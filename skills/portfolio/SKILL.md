@@ -27,7 +27,7 @@ Never invent a trading endpoint.
 2. Build a standard EIP-4361 message for the user's wallet address with that nonce, using
    `forest.inc` as the domain and `https://forest.inc` as the URI; sign it with the wallet.
 3. `POST /auth/ethereum` with body `{ "message": "<siwe message>", "signature": "0x..." }`
-   (optional `walletProvider` metadata object) → `201 { "accessToken": "..." }` plus the
+   (optional `walletProvider` metadata object) → `200 { "accessToken": "..." }` plus the
    `forest-session` cookie.
 4. Send `Authorization: Bearer <accessToken>`. The token lasts about 30 minutes; renew with
    `POST /auth/refresh`, which uses the session cookie.
