@@ -16,7 +16,7 @@ Never invent a trading endpoint.
 ## API basics
 
 - Base URL: `https://api.forest.inc`
-- Interactive reference (Scalar): `https://api.forest.inc/docs`; raw OpenAPI: `/docs/json`
+- API reference: `https://forest.inc/docs/reference`; raw OpenAPI: `https://api.forest.inc/docs/json`
 - Auth: SIWE (EIP-4361) → Bearer JWT. `/me/*` endpoints answer only for the authenticated
   user's linked wallets; there is no "portfolio of arbitrary wallet X" endpoint.
 
